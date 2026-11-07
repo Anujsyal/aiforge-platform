@@ -1,0 +1,57 @@
+{{- if .Values.ingest.onSync }}
+# Argo CD PostSync hook: deploy ke baad bundled docs ingest. Same signed app image use hota hai
+# (curl image Kyverno ki "sirf ECR" policy pe block ho jaati).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ai-app.name" . }}-ingest
+  labels: {{- include "ai-app.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "ai-app.commonLabels" . | nindent 8 }}
+        app.kubernetes.io/component: ingest
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ingest
+          image: {{ include "ai-app.image" . }}
+          env:
+            - name: INGEST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-app.name" . }}-secrets
+                  key: ingest_token
+            - name: TARGET
+              value: http://{{ include "ai-app.name" . }}.{{ .Release.Namespace }}.svc/ingest
+          command:
+            - python
+            - -c
+            - |
+              import json, os, time, urllib.request
+              req = urllib.request.Request(os.environ["TARGET"], data=json.dumps({"bundled": True}).encode(),
+                    headers={"Content-Type": "application/json", "X-Ingest-Token": os.environ["INGEST_TOKEN"]})
+              for attempt in range(20):
+                  try:
+                      print(urllib.request.urlopen(req, timeout=600).read().decode()); break
+                  except Exception as e:
+                      print("retry", attempt, e); time.sleep(15)
+              else:
+                  raise SystemExit("ingest failed")
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext: {{- include "ai-app.containerSecurity" . | nindent 12 }}
+{{- end }}

@@ -1,0 +1,39 @@
+# WAVE 1: Backstage (developer portal)  |  WAVE 5: tenant apps (ApplicationSet)
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backstage
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/platform-config/backstage
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: backstage
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tenant-appsets
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/appsets
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

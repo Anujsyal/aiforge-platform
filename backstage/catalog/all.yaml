@@ -1,0 +1,155 @@
+# AIForge software catalog: system, teams, gateway, API aur MODEL CATALOG (har model ek Resource).
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: aiforge
+  title: AIForge AI Platform
+  description: Self-service AI platform (gateway, vector DB, golden paths, eval gates, cost showback)
+spec:
+  owner: group:platform-team
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-team
+  description: Owns AIForge
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: team-alpha
+  description: Sample product team (pehla tenant)
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: team-beta
+  description: Doosra tenant (template demo ke liye)
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: User
+metadata:
+  name: guest
+spec:
+  memberOf: [platform-team]
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: litellm-gateway
+  title: LiteLLM AI Gateway
+  description: Central OpenAI-compatible gateway. Team keys, budgets, fallback, spend tracking, Langfuse logging.
+  annotations:
+    argocd/app-name: litellm
+    backstage.io/kubernetes-namespace: ai-gateway
+  links:
+    - url: http://localhost:4000/ui
+      title: LiteLLM admin UI (port-forward)
+spec:
+  type: service
+  lifecycle: production
+  owner: group:platform-team
+  system: aiforge
+  providesApis: [llm-gateway-api]
+  dependsOn:
+    - resource:default/llm-llama3-2-1b
+    - resource:default/llm-qwen2-5-0-5b
+    - resource:default/llm-nomic-embed-text
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: llm-gateway-api
+  title: LLM Gateway API (OpenAI-compatible)
+  description: http://litellm.ai-gateway.svc.cluster.local:4000/v1 , auth = team virtual key (Vault teams/<team>/<app>)
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:platform-team
+  system: aiforge
+  definition: |
+    openapi: 3.0.0
+    info: { title: AIForge LLM Gateway, version: "1.0" }
+    servers: [{ url: "http://litellm.ai-gateway.svc.cluster.local:4000/v1" }]
+    paths:
+      /chat/completions:
+        post:
+          summary: Chat completion (models - llama3.2-1b, qwen2.5-0.5b)
+          responses: { "200": { description: OK }, "429": { description: Team budget exceeded } }
+      /embeddings:
+        post:
+          summary: Embeddings (nomic-embed-text, 768 dim)
+          responses: { "200": { description: OK } }
+---
+# ---------------- MODEL CATALOG ----------------
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: llm-llama3-2-1b
+  title: llama3.2-1b
+  description: Default chat model. Self-hosted (Ollama, CPU). Fallback - qwen2.5-0.5b.
+  annotations:
+    aiforge.io/gateway-model-name: llama3.2-1b
+    aiforge.io/price-input-per-1m-usd: "0.20"
+    aiforge.io/price-output-per-1m-usd: "0.40"
+    aiforge.io/context-window: "131072"
+    aiforge.io/data-residency: in-vpc
+  tags: [chat, default, self-hosted]
+spec:
+  type: llm-model
+  owner: group:platform-team
+  system: aiforge
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: llm-qwen2-5-0-5b
+  title: qwen2.5-0.5b
+  description: Smallest/fastest chat model. Gateway fallback.
+  annotations:
+    aiforge.io/gateway-model-name: qwen2.5-0.5b
+    aiforge.io/price-input-per-1m-usd: "0.10"
+    aiforge.io/price-output-per-1m-usd: "0.20"
+    aiforge.io/data-residency: in-vpc
+  tags: [chat, fallback, self-hosted]
+spec:
+  type: llm-model
+  owner: group:platform-team
+  system: aiforge
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: llm-nomic-embed-text
+  title: nomic-embed-text
+  description: Embedding model, 768 dimensions.
+  annotations:
+    aiforge.io/gateway-model-name: nomic-embed-text
+    aiforge.io/price-input-per-1m-usd: "0.02"
+    aiforge.io/dimension: "768"
+    aiforge.io/data-residency: in-vpc
+  tags: [embedding, self-hosted]
+spec:
+  type: llm-model
+  owner: group:platform-team
+  system: aiforge
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: qdrant
+  title: Qdrant vector DB
+  description: Shared vector DB. Per-app collections via Crossplane VectorStore API.
+spec:
+  type: database
+  owner: group:platform-team
+  system: aiforge

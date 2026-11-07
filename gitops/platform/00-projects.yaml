@@ -1,0 +1,75 @@
+# 2 AppProjects:
+#  platform: platform team ke add-ons (sab kuch allowed)
+#  ai-apps : team RAG apps. Cluster-scoped cheezein (ClusterRole, CRD...) BANA hi NAHI sakte,
+#            aur platform namespaces mein deploy nahi kar sakte. Multi-tenancy ka GitOps layer.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: AIForge platform add-ons
+  sourceRepos: ["*"]
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ai-apps
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: Team RAG apps (golden path)
+  sourceRepos:
+    - https://github.com/<GITHUB_USER>/aiforge-platform.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+    # "!" = DENY (deny allow se jeet-ta hai). Platform namespaces mein tenant apps nahi ja sakte.
+    - { server: https://kubernetes.default.svc, namespace: "!kube-system" }
+    - { server: https://kubernetes.default.svc, namespace: "!argocd" }
+    - { server: https://kubernetes.default.svc, namespace: "!ai-gateway" }
+    - { server: https://kubernetes.default.svc, namespace: "!ai-serving" }
+    - { server: https://kubernetes.default.svc, namespace: "!vector-db" }
+    - { server: https://kubernetes.default.svc, namespace: "!vault" }
+    - { server: https://kubernetes.default.svc, namespace: "!external-secrets" }
+    - { server: https://kubernetes.default.svc, namespace: "!kyverno" }
+    - { server: https://kubernetes.default.svc, namespace: "!crossplane-system" }
+    - { server: https://kubernetes.default.svc, namespace: "!monitoring" }
+    - { server: https://kubernetes.default.svc, namespace: "!observability" }
+    - { server: https://kubernetes.default.svc, namespace: "!backstage" }
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: rbac.authorization.k8s.io
+      kind: "*"
+---
+# Platform namespaces EK jagah, PSA labels ke saath (wave -8: sab se pehle).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-namespaces
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-8"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/platform-config/namespaces
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated: { prune: false, selfHeal: true }   # namespace prune = andar ka sab delete, isliye false

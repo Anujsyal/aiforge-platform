@@ -1,0 +1,21 @@
+# Copy karke terraform.tfvars bana (terraform.tfvars .gitignore mein hai)
+region       = "ap-south-1"
+cluster_name = "aiforge"
+
+github_repo  = "<your-github-username>/aiforge-platform"
+alert_emails = ["<your-email>"]
+
+# Sizing (guide section 1.6 mein kharcha)
+server_instance_type = "t3.large"
+agent_instance_type  = "t3.xlarge"
+agent_count          = 2
+agents_use_spot      = false
+
+# Kharcha bachana ho to [] kar de (ECR pulls NAT se jayenge)
+interface_endpoints = ["ecr.api", "ecr.dkr"]
+
+# Pehle kisi project mein GitHub OIDC provider bana chuka hai to false
+create_github_oidc_provider = true
+
+account_monthly_limit_usd = 60
+project_monthly_limit_usd = 40

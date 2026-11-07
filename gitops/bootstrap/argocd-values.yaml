@@ -1,0 +1,60 @@
+# Argo CD Helm values (bootstrap, haath se):
+#   helm repo add argo https://argoproj.github.io/argo-helm
+#   helm upgrade --install argocd argo/argo-cd -n argocd --create-namespace --version 10.14.0 -f gitops/bootstrap/argocd-values.yaml
+global:
+  domain: localhost
+
+configs:
+  params:
+    server.insecure: true          # TLS port-forward/ALB pe; lab ke liye
+  cm:
+    # Argo CD 1.8 se Application resources ki health check DEFAULT OFF hai.
+    # Iske bina app-of-apps mein sync-waves ka koi matlab nahi (child app "Healthy" ka wait nahi hota).
+    # (Problems faced #4)
+    resource.customizations.health.argoproj.io_Application: |
+      hs = {}
+      hs.status = "Progressing"
+      hs.message = ""
+      if obj.status ~= nil then
+        if obj.status.health ~= nil then
+          hs.status = obj.status.health.status
+          if obj.status.health.message ~= nil then
+            hs.message = obj.status.health.message
+          end
+        end
+      end
+      return hs
+    # Crossplane XR ki health (Ready condition se)
+    resource.customizations.health.platform.aiforge.io_VectorStore: |
+      hs = { status = "Progressing", message = "waiting for Ready" }
+      if obj.status ~= nil and obj.status.conditions ~= nil then
+        for _, c in ipairs(obj.status.conditions) do
+          if c.type == "Ready" and c.status == "True" then
+            hs.status = "Healthy"; hs.message = "ready"
+          elseif c.type == "Synced" and c.status == "False" then
+            hs.status = "Degraded"; hs.message = c.message or ""
+          end
+        end
+      end
+      return hs
+
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 384Mi }
+    limits: { memory: 1Gi }
+server:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 192Mi }
+applicationSet:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }
+dex:
+  enabled: false
+notifications:
+  enabled: false
+redis:
+  resources:
+    requests: { cpu: 25m, memory: 64Mi }

@@ -1,0 +1,64 @@
+# Backstage portal image: laptop (7 GB RAM) pe yarn build bhaari hai, isliye CI mein.
+# backstage/app/ (npx @backstage/create-app se bana) → build → Trivy (report) → ECR → kustomization newTag
+name: backstage-image
+
+on:
+  push:
+    branches: [main]
+    paths: ["backstage/app/**", ".github/workflows/backstage-image.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPO: aiforge/backstage
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run: { working-directory: backstage/app }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: corepack enable
+      - run: yarn install --immutable
+      - run: yarn tsc
+      - run: yarn build:backend
+
+      - name: Docker build (create-app ka Dockerfile)
+        run: docker image build . -f packages/backend/Dockerfile -t backstage:ci
+
+      - name: Trivy (report only; Backstage ki npm deps mein HIGH aksar aate hain)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
+            image --severity CRITICAL --ignore-unfixed --exit-code 0 backstage:ci
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push
+        id: push
+        run: |
+          TAG="${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
+          docker tag backstage:ci "${{ steps.ecr.outputs.registry }}/${ECR_REPO}:$TAG"
+          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPO}:$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Bump kustomization
+        working-directory: .
+        run: |
+          sed -i -E "s|^(    newTag: ).*|\1\"${{ steps.push.outputs.tag }}\"|" gitops/platform-config/backstage/kustomization.yaml
+          git config user.name "aiforge-ci"
+          git config user.email "aiforge-ci@users.noreply.github.com"
+          git commit -am "release(backstage): ${{ steps.push.outputs.tag }}"
+          for i in 1 2 3; do git pull --rebase origin main && git push origin HEAD:main && break; sleep 5; done

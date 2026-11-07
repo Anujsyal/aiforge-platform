@@ -1,0 +1,142 @@
+# Ollama: self-hosted chhote models CPU pe. Bahar se koi seedha access nahi; sirf LiteLLM (NetworkPolicy).
+# Models PVC mein rehte hain (pod restart pe dobara ~2 GB download nahi).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: ai-serving
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path   # k3s local-path: PVC = us node ki disk (pod usi node pe rahega)
+  resources:
+    requests:
+      storage: 15Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ollama-models
+  namespace: ai-serving
+data:
+  # Naya model chahiye? Yahan add karo + LiteLLM config mein model_list.
+  models: |
+    llama3.2:1b
+    qwen2.5:0.5b
+    nomic-embed-text
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: ai-serving
+  labels:
+    app.kubernetes.io/name: ollama
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate          # RWO volume: 2 pods ek saath mount nahi kar sakte
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ollama
+    spec:
+      nodeSelector:
+        aiforge.io/pool: ai       # Terraform: pehla agent node
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        # Server background mein chala ke models pull, phir band. Already pulled = turant.
+        - name: pull-models
+          image: ollama/ollama:0.40.15
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: OLLAMA_MODELS, value: /models }
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              ollama serve & PID=$!
+              until ollama list >/dev/null 2>&1; do sleep 1; done
+              for m in $(cat /config/models); do echo "pulling $m"; ollama pull "$m"; done
+              kill $PID
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: config, mountPath: /config }
+            - { name: tmp, mountPath: /tmp }
+          securityContext: &sc
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+      containers:
+        - name: ollama
+          image: ollama/ollama:0.40.15
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: OLLAMA_MODELS, value: /models }
+            - { name: OLLAMA_HOST, value: "0.0.0.0:11434" }
+            - { name: OLLAMA_KEEP_ALIVE, value: "30m" }      # model RAM mein rakho (cold start ~10s)
+            - { name: OLLAMA_NUM_PARALLEL, value: "2" }
+            - { name: OLLAMA_MAX_LOADED_MODELS, value: "3" } # chat + fallback + embed
+          ports:
+            - { name: http, containerPort: 11434 }
+          readinessProbe:
+            httpGet: { path: /api/tags, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: { cpu: "2", memory: 4Gi }
+            limits: { cpu: "4", memory: 8Gi }
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: tmp, mountPath: /tmp }
+          securityContext: *sc
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: ollama-models }
+        - name: config
+          configMap: { name: ollama-models }
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: ai-serving
+  labels:
+    app.kubernetes.io/name: ollama
+spec:
+  selector:
+    app.kubernetes.io/name: ollama
+  ports:
+    - { name: http, port: 11434, targetPort: http }
+---
+# Sirf LiteLLM hi Ollama se baat kar sakta hai. Team apps gateway bypass nahi kar sakte.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ollama-only-from-gateway
+  namespace: ai-serving
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ollama
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-gateway
+      ports:
+        - { protocol: TCP, port: 11434 }

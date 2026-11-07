@@ -1,0 +1,9 @@
+apiVersion: v2
+name: ai-app
+description: >
+  AIForge golden-path chart. Ek RAG app ko secure defaults ke saath deploy karta hai:
+  restricted securityContext, default-deny NetworkPolicy, Vault se LLM key (ESO),
+  Crossplane VectorStore, ALB ingress, ServiceMonitor aur post-sync ingest job.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

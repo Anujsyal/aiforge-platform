@@ -1,0 +1,60 @@
+# SUPPLY CHAIN + EVAL GATE at admission.
+# Tenant namespace (aiforge.io/tenant=true) mein koi bhi Pod tabhi chalega jab uski image:
+#   1. Hamari GitHub Actions workflow ne cosign KEYLESS se sign ki ho (Sigstore Fulcio cert, OIDC identity)
+#   2. Uske saath eval attestation ho jisme passRate >= 0.8 aur redteamPassRate == 1
+# Matlab koi developer laptop se image push karke deploy nahi kar sakta, aur fail-eval build cluster tak nahi aata.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-signed-and-evaluated-images
+  annotations:
+    policies.kyverno.io/title: Signed images with passing eval attestation
+    policies.kyverno.io/category: AI Supply Chain
+spec:
+  webhookTimeoutSeconds: 30       # Rekor/ECR lookup mein time lagta hai
+  background: false
+  rules:
+    - name: verify-signature-and-eval
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels:
+                  aiforge.io/tenant: "true"
+      verifyImages:
+        - imageReferences:
+            - "<ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/*"
+          failureAction: Enforce
+          mutateDigest: false     # chart pehle se digest use karta hai; mutate kiya to Argo CD drift dikhata
+          verifyDigest: true      # tag-only image ref reject
+          required: true
+          # ECR private hai: Kyverno node role (IMDS, hop limit 2) se ECR token leta hai
+          imageRegistryCredentials:
+            providers: ["amazon"]
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: https://token.actions.githubusercontent.com
+                    subject: "https://github.com/<GITHUB_USER>/aiforge-platform/.github/workflows/rag-app-ci.yml@refs/heads/main"
+                    rekor:
+                      url: https://rekor.sigstore.dev
+          attestations:
+            - type: https://aiforge.dev/attestations/eval/v1
+              attestors:
+                - entries:
+                    - keyless:
+                        issuer: https://token.actions.githubusercontent.com
+                        subject: "https://github.com/<GITHUB_USER>/aiforge-platform/.github/workflows/rag-app-ci.yml@refs/heads/main"
+                        rekor:
+                          url: https://rekor.sigstore.dev
+              conditions:
+                - all:
+                    - key: "{{ passRate }}"
+                      operator: GreaterThanOrEquals
+                      value: 0.8
+                      message: "Eval pass rate {{ passRate }} is below 0.8"
+                    - key: "{{ redteamPassRate }}"
+                      operator: Equals
+                      value: 1
+                      message: "Red-team pass rate {{ redteamPassRate }} must be 1.0"

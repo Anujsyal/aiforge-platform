@@ -1,0 +1,4 @@
+# ApplicationSet ye file padhta hai (name = namespace = Argo app name)
+name: team-alpha-rag
+team: team-alpha
+costCenter: cc-alpha

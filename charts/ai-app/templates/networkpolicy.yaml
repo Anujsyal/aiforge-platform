@@ -1,0 +1,80 @@
+# SHADOW-AI CONTROL (network layer).
+# Default: sab egress band. Sirf ye allowed: DNS, LiteLLM gateway, Qdrant, OTel collector.
+# Isliye pod agar api.openai.com ko call kare to connection timeout. (Kyverno bhi ensure karta hai ki
+# har tenant namespace mein default-deny ho, chahe chart ye na bhi banaye.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ai-app.name" . }}-egress
+  labels: {{- include "ai-app.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress:
+    # Same namespace (ingest job → app Service)
+    - to:
+        - podSelector: {}
+      ports:
+        - { protocol: TCP, port: 8080 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-gateway
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - { protocol: TCP, port: 4000 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: vector-db
+      ports:
+        - { protocol: TCP, port: 6333 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opentelemetry-collector
+      ports:
+        - { protocol: TCP, port: 4318 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ai-app.name" . }}-ingress
+  labels: {{- include "ai-app.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+  ingress:
+    # ALB → NodePort → pod. Source = node/ALB ka IP (VPC CIDR ke andar)
+    - from:
+        - ipBlock:
+            cidr: {{ .Values.network.vpcCidr }}
+      ports:
+        - { protocol: TCP, port: 8080 }
+    # Prometheus scrape
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - { protocol: TCP, port: 8080 }
+    # Same namespace (ingest job → app)
+    - from:
+        - podSelector: {}
+      ports:
+        - { protocol: TCP, port: 8080 }

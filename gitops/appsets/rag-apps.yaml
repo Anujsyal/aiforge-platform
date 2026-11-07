@@ -1,0 +1,57 @@
+# GOLDEN PATH ka deploy hissa.
+# gitops/apps/<app>/app.yaml milte hi (Backstage template ka PR merge) ek Argo CD Application banti hai:
+#   chart   = charts/ai-app (shared)
+#   values  = gitops/release/rag-app.yaml (CI: image digest, central settings) + gitops/apps/<app>/values.yaml
+#   ns      = <app>, labels: team, tenant=true, PSA restricted
+# Folder delete → Application delete → namespace ke resources prune.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: rag-apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+        revision: main
+        files:
+          - path: gitops/apps/*/app.yaml
+  template:
+    metadata:
+      name: "{{ .name }}"
+      labels:
+        aiforge.io/team: "{{ .team }}"
+        aiforge.io/app-type: rag
+    spec:
+      project: ai-apps
+      source:
+        repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+        targetRevision: main
+        path: charts/ai-app
+        helm:
+          releaseName: "{{ .name }}"
+          valueFiles:
+            - ../../gitops/release/rag-app.yaml
+            - "../../gitops/apps/{{ .name }}/values.yaml"
+          parameters:
+            - { name: appName, value: "{{ .name }}" }
+            - { name: team, value: "{{ .team }}" }
+            - { name: costCenter, value: "{{ .costCenter }}" }
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: "{{ .name }}"
+      syncPolicy:
+        automated: { prune: true, selfHeal: true }
+        syncOptions: [CreateNamespace=true]
+        managedNamespaceMetadata:
+          labels:
+            aiforge.io/tenant: "true"
+            aiforge.io/team: "{{ .team }}"
+            aiforge.io/cost-center: "{{ .costCenter }}"
+            pod-security.kubernetes.io/enforce: restricted
+            pod-security.kubernetes.io/enforce-version: latest
+        retry:
+          limit: 10
+          backoff: { duration: 20s, factor: 2, maxDuration: 5m }

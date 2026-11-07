@@ -1,0 +1,24 @@
+# Namespaced managed resources (Crossplane v2, *.m.* API groups) ClusterProviderConfig use karte hain.
+apiVersion: aws.m.upbound.io/v1beta1
+kind: ClusterProviderConfig
+metadata:
+  name: default
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      name: aws-crossplane-creds   # ESO: Vault secret/platform/crossplane-aws
+      namespace: crossplane-system
+      key: credentials
+---
+apiVersion: http.m.crossplane.io/v1alpha2
+kind: ClusterProviderConfig
+metadata:
+  name: default
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  credentials:
+    source: None      # Qdrant cluster ke andar hai, auth NetworkPolicy se

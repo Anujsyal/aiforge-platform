@@ -1,0 +1,108 @@
+# Golden dataset: promptfoo (quality gate) aur RAGAS (advisory) DONO isi file ko padhte hain.
+# vars.question  = user ka sawaal
+# vars.reference = sahi jawab (RAGAS context recall ke liye)
+# assert         = promptfoo checks. Output format: "<answer>\n\nSOURCES: a.md, b.md"
+#
+# Rule: har naye bug/regression pe yahan ek test case add karo (eval-driven development).
+
+- description: default team budget
+  vars:
+    question: What is the default monthly LLM budget for a new team?
+    reference: Every team gets a default LLM budget of 25 USD per month.
+  assert:
+    - type: icontains
+      value: "25"
+    - type: icontains
+      value: budgets.md
+
+- description: budget exhausted behaviour
+  vars:
+    question: What happens when a team uses its full LLM budget?
+    reference: The gateway rejects new requests with HTTP 429 until the next month.
+  assert:
+    - type: icontains
+      value: "429"
+
+- description: budget approval owner
+  vars:
+    question: Who must approve a budget increase above 100 USD per month?
+    reference: The FinOps lead, Priya Raman.
+  assert:
+    - type: icontains
+      value: Priya
+
+- description: golden path template name
+  vars:
+    question: Which Backstage template should I use to create a new RAG application?
+    reference: The Backstage template called "Create RAG App".
+  assert:
+    - type: icontains
+      value: Create RAG App
+    - type: icontains
+      value: onboarding.md
+
+- description: deployer of new apps
+  vars:
+    question: What deploys a new RAG app after its pull request is merged?
+    reference: The Argo CD ApplicationSet named "rag-apps".
+  assert:
+    - type: icontains-any
+      value: ["ApplicationSet", "rag-apps"]
+
+- description: fallback model
+  vars:
+    question: Which model does the gateway fall back to if llama3.2-1b fails?
+    reference: It falls back to qwen2.5-0.5b.
+  assert:
+    - type: icontains
+      value: qwen
+
+- description: embedding dimension
+  vars:
+    question: How many dimensions do the nomic-embed-text vectors have?
+    reference: 768 dimensions.
+  assert:
+    - type: icontains
+      value: "768"
+
+- description: no direct external AI calls
+  vars:
+    question: Can my application call the OpenAI API directly?
+    reference: No. All model traffic must go through the LiteLLM gateway; NetworkPolicies deny other egress.
+  assert:
+    - type: icontains-any
+      value: ["gateway", "LiteLLM", "not", "never"]
+    - type: icontains
+      value: security.md
+
+- description: node access method
+  vars:
+    question: How do engineers connect to the cluster nodes?
+    reference: With AWS SSM Session Manager, not SSH.
+  assert:
+    - type: icontains
+      value: Session Manager
+
+- description: on-call rotation name
+  vars:
+    question: What is the name of the platform on-call rotation?
+    reference: Forge Watch.
+  assert:
+    - type: icontains
+      value: Forge Watch
+
+- description: eval gate threshold
+  vars:
+    question: What eval pass rate does a release need?
+    reference: At least 80 percent of the eval cases must pass.
+  assert:
+    - type: icontains
+      value: "80"
+
+- description: out-of-scope question must not hallucinate
+  vars:
+    question: What is the capital of Australia?
+    reference: I don't know based on the provided documents.
+  assert:
+    - type: icontains-any
+      value: ["don't know", "do not know", "not in the", "no information"]

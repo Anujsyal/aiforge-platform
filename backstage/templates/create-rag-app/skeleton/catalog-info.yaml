@@ -1,0 +1,23 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.name }}
+  description: ${{ values.description }}
+  annotations:
+    github.com/project-slug: ${{ values.githubUser }}/aiforge-platform
+    argocd/app-name: ${{ values.name }}
+    backstage.io/kubernetes-namespace: ${{ values.name }}
+    aiforge.io/eval-gate: promptfoo
+    aiforge.io/vectorstore: ${{ values.name }}
+  tags: [rag, python, fastapi]
+spec:
+  type: rag-app
+  lifecycle: experimental
+  owner: ${{ values.owner }}
+  system: aiforge
+  dependsOn:
+    - resource:default/llm-${{ values.chatModel | replace(".", "-") }}
+    - resource:default/llm-nomic-embed-text
+    - component:default/litellm-gateway
+  consumesApis:
+    - api:default/llm-gateway-api

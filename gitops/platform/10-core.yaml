@@ -1,0 +1,234 @@
+# WAVE -5: core add-ons (CRDs + controllers). Baaki sab inke upar khada hai.
+# Versions Nov 2026 ke latest stable (Artifact Hub). Upgrade se pehle: scripts/check-chart-versions.sh
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aws-load-balancer-controller
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://aws.github.io/eks-charts
+    chart: aws-load-balancer-controller
+    targetRevision: 3.6.2   # app v3.6.2 = Terraform var alb_controller_version (IAM policy)
+    helm:
+      valuesObject:
+        clusterName: aiforge
+        region: ap-south-1
+        vpcId: <VPC_ID>                   # terraform output vpc_id (IMDS pe depend na rahe)
+        replicaCount: 1
+        enableServiceMutatorWebhook: false # LoadBalancer Services ko NLB mein mat badlo
+        resources:
+          requests: { cpu: 50m, memory: 128Mi }
+          limits: { memory: 256Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://kyverno.github.io/kyverno/
+    chart: kyverno
+    targetRevision: 3.9.2   # Kyverno v1.19.x (3.10 abhi RC hai)
+    helm:
+      valuesObject:
+        admissionController:
+          replicas: 1
+          container:
+            resources:
+              requests: { cpu: 100m, memory: 256Mi }
+              limits: { memory: 512Mi }
+        backgroundController:
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+        cleanupController:
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+        reportsController:
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  # Project 2 ka lesson: Kyverno 3.9.x CRDs pe khaali labels/annotations → permanent OutOfSync loop
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers: [/metadata/labels, /metadata/annotations]
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-secrets
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://charts.external-secrets.io
+    chart: external-secrets
+    targetRevision: 2.14.0
+    helm:
+      valuesObject:
+        resources:
+          requests: { cpu: 25m, memory: 64Mi }
+        webhook:
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+        certController:
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-secrets
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://helm.releases.hashicorp.com
+    chart: vault
+    targetRevision: 0.34.1   # Vault 2.0.x
+    helm:
+      valuesObject:
+        injector:
+          enabled: false      # hum ESO use karte hain (Secret sync), sidecar injector nahi
+        ui:
+          enabled: true
+        server:
+          # Standalone + file storage. Pod restart pe Vault SEALED ho jaata hai → scripts/vault-unseal.sh
+          # (production: HA raft + AWS KMS auto-unseal)
+          standalone:
+            enabled: true
+          dataStorage:
+            enabled: true
+            size: 2Gi
+            storageClass: local-path
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault
+  # Init/unseal se pehle vault-0 Ready nahi hota → Argo mein "Progressing" dikhta hai. Normal hai (guide F2).
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: crossplane
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://charts.crossplane.io/stable
+    chart: crossplane
+    targetRevision: 2.4.3
+    helm:
+      valuesObject:
+        resourcesCrossplane:
+          requests: { cpu: 50m, memory: 128Mi }
+          limits: { memory: 512Mi }
+        resourcesRBACManager:
+          requests: { cpu: 10m, memory: 64Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crossplane-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 92.21.2
+    helm:
+      valuesObject:
+        # k3s mein etcd/scheduler/controller-manager/kube-proxy ek hi binary mein hain, alag
+        # endpoints nahi milte → in targets ko band karo warna permanent "target down" alerts
+        kubeEtcd: { enabled: false }
+        kubeScheduler: { enabled: false }
+        kubeControllerManager: { enabled: false }
+        kubeProxy: { enabled: false }
+        alertmanager:
+          enabled: false      # alerting Project 2 mein dikha chuke; yahan RAM bachao
+        prometheus:
+          prometheusSpec:
+            retention: 3d
+            # Har namespace ke ServiceMonitor/PrometheusRule uthao (sirf release label wale nahi)
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            resources:
+              requests: { cpu: 200m, memory: 768Mi }
+              limits: { memory: 1536Mi }
+        grafana:
+          admin:
+            existingSecret: grafana-admin   # ESO Vault se banata hai (platform-config/secrets)
+            userKey: admin-user
+            passwordKey: admin-password
+          sidecar:
+            dashboards:
+              enabled: true
+              label: grafana_dashboard
+              searchNamespace: ALL
+          additionalDataSources:
+            - name: Loki
+              type: loki
+              uid: loki
+              url: http://loki-gateway.observability.svc.cluster.local
+              access: proxy
+          resources:
+            requests: { cpu: 50m, memory: 192Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

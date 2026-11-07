@@ -1,0 +1,27 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: team-alpha-rag
+  title: Team Alpha RAG Assistant
+  description: Internal docs Q&A for team alpha (AIForge golden path)
+  annotations:
+    github.com/project-slug: <GITHUB_USER>/aiforge-platform
+    argocd/app-name: team-alpha-rag
+    backstage.io/kubernetes-namespace: team-alpha-rag
+    aiforge.io/eval-gate: promptfoo
+    aiforge.io/vectorstore: team-alpha-rag
+  tags: [rag, python, fastapi]
+  links:
+    - url: http://localhost:3000/d/aiforge-rag
+      title: Grafana dashboard
+spec:
+  type: rag-app
+  lifecycle: experimental
+  owner: group:team-alpha
+  system: aiforge
+  dependsOn:
+    - resource:default/llm-llama3-2-1b
+    - resource:default/llm-nomic-embed-text
+    - component:default/litellm-gateway
+  consumesApis:
+    - api:default/llm-gateway-api

@@ -1,0 +1,64 @@
+# Terraform PR checks: fmt, validate, IaC misconfig scan (Trivy), aur INFRACOST cost diff PR comment.
+# Apply CI se NAHI hota: laptop se haath se (guide B3). PR mein reviewer ko dikhta hai "is change se $X/month badhega".
+name: terraform-ci
+
+on:
+  pull_request:
+    paths: ["terraform/**", ".github/workflows/terraform-ci.yml"]
+
+permissions:
+  contents: read
+  pull-requests: write   # Infracost comment
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.13.4" }
+      - run: terraform fmt -recursive -check terraform
+      - name: validate (bina backend)
+        run: |
+          for d in terraform/bootstrap terraform/stacks/platform; do
+            terraform -chdir=$d init -backend=false -input=false
+            terraform -chdir=$d validate
+          done
+      # Report-only: kuch findings jaan-boojh ke hain (public subnet NACL 80/443, nodes ka egress all).
+      # Unke reasons guide H1 mein. CRITICAL aaye to padh ke decide kar.
+      - name: Trivy IaC scan
+        run: |
+          docker run --rm -v "$PWD:/src" aquasec/trivy:latest config --severity HIGH,CRITICAL --exit-code 0 /src/terraform
+
+  infracost:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}   # free: infracost.io → API key
+
+      - name: Checkout base branch
+        uses: actions/checkout@v4
+        with: { ref: "${{ github.event.pull_request.base.ref }}" }
+
+      - name: Baseline cost
+        run: |
+          infracost breakdown --path terraform/stacks/platform \
+            --terraform-var-file terraform.tfvars.example \
+            --format json --out-file /tmp/infracost-base.json
+
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Cost diff
+        run: |
+          infracost diff --path terraform/stacks/platform \
+            --terraform-var-file terraform.tfvars.example \
+            --compare-to /tmp/infracost-base.json \
+            --format json --out-file /tmp/infracost.json
+
+      - name: PR comment
+        run: |
+          infracost comment github --path /tmp/infracost.json \
+            --repo "$GITHUB_REPOSITORY" --github-token "${{ github.token }}" \
+            --pull-request "${{ github.event.pull_request.number }}" --behavior update

@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+# QUALITY GATE: RAG app ke /ask endpoint ko black-box test karta hai.
+#   RAG_URL=http://localhost:8080 npx promptfoo@latest eval -c evals/promptfooconfig.yaml -j 1 -o evals/results/quality.json
+# PROMPTFOO_PASS_RATE_THRESHOLD=80 ho to 80% se kam pass pe exit code non-zero → CI fail.
+description: AIForge RAG quality gate
+
+prompts:
+  - "{{question}}"
+
+providers:
+  - id: http
+    label: rag-app
+    config:
+      url: "{{ env.RAG_URL }}/ask"
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        question: "{{prompt}}"
+      # Answer + sources ek string mein, taaki asserts dono check kar saken
+      transformResponse: 'json.answer + "\n\nSOURCES: " + (json.sources || []).join(", ")'
+
+tests: file://dataset.yaml

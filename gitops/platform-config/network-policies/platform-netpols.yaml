@@ -1,0 +1,70 @@
+# Platform namespaces ke ingress rules (kaun kis se baat kar sakta hai).
+# Tenant egress chart + Kyverno default-deny se band hai; ye policies "doosri taraf" ka darwaza hain.
+---
+# Qdrant: tenant apps (data), Crossplane provider-http (collection create/delete), Prometheus
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: qdrant-ingress
+  namespace: vector-db
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { aiforge.io/tenant: "true" }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: crossplane-system }
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+        - podSelector: {}
+      ports:
+        - { protocol: TCP, port: 6333 }
+        - { protocol: TCP, port: 6334 }
+        - { protocol: TCP, port: 6335 }
+---
+# Vault: sirf ESO (aur Vault khud). Laptop se `kubectl port-forward` kubelet ke through aata hai,
+# NetworkPolicy usse nahi rokti (port-forward pod ke network namespace mein localhost se jaata hai).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-ingress
+  namespace: vault
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: external-secrets }
+        - podSelector: {}
+      ports:
+        - { protocol: TCP, port: 8200 }
+        - { protocol: TCP, port: 8201 }
+---
+# OTel collector: tenant apps traces bhejte hain
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector-ingress
+  namespace: observability
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: opentelemetry-collector
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { aiforge.io/tenant: "true" }
+        - namespaceSelector:
+            matchLabels: { aiforge.io/platform: "true" }
+      ports:
+        - { protocol: TCP, port: 4318 }
+        - { protocol: TCP, port: 4317 }
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports:
+        - { protocol: TCP, port: 8888 }

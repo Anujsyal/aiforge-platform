@@ -1,0 +1,15 @@
+# gitleaks: default rules + placeholders/examples allowlist
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Docs/examples mein fake values"
+paths = [
+  '''\.example$''',
+  '''MANUAL-SETUP-GUIDE\.md''',
+  '''docs/.*\.md''',
+]
+regexes = [
+  '''<[A-Z_]+>''',
+  '''sk-local''',
+]

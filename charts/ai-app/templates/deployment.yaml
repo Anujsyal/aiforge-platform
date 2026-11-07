@@ -1,0 +1,120 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "ai-app.name" . }}
+  labels: {{- include "ai-app.labels" . | nindent 4 }}
+automountServiceAccountToken: false   # app ko Kubernetes API ki zarurat nahi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-app.name" . }}
+  labels: {{- include "ai-app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: {{- include "ai-app.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ai-app.labels" . | nindent 8 }}
+      annotations:
+        # Env var se secret sirf pod start pe padha jaata hai. Vault mein key rotate ki to
+        # ESO Secret update karega, par pods ko `kubectl rollout restart` chahiye (guide F6).
+        aiforge.io/eval-suite: aiforge-rag-v1
+    spec:
+      serviceAccountName: {{ include "ai-app.name" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: {{ include "ai-app.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: APP_NAME
+              value: {{ include "ai-app.name" . }}
+            - name: TEAM
+              value: {{ include "ai-app.team" . }}
+            - name: BASE_PATH
+              value: {{ include "ai-app.basePath" . }}
+            - name: LLM_BASE_URL
+              value: {{ .Values.llm.gatewayUrl }}
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-app.name" . }}-secrets
+                  key: litellm_api_key
+            - name: INGEST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-app.name" . }}-secrets
+                  key: ingest_token
+            - name: CHAT_MODEL
+              value: {{ .Values.llm.chatModel | quote }}
+            - name: EMBED_MODEL
+              value: {{ .Values.llm.embedModel | quote }}
+            - name: EMBED_DIM
+              value: {{ .Values.llm.embedDim | quote }}
+            - name: MAX_TOKENS
+              value: {{ .Values.llm.maxTokens | quote }}
+            - name: LLM_TIMEOUT_S
+              value: {{ .Values.llm.timeoutSeconds | quote }}
+            - name: QDRANT_URL
+              value: {{ .Values.vectorStore.qdrantUrl }}
+            - name: QDRANT_COLLECTION
+              value: {{ include "ai-app.name" . }}
+            - name: AUTO_CREATE_COLLECTION
+              value: {{ (not .Values.vectorStore.create) | quote }}
+            - name: OTEL_ENABLED
+              value: {{ .Values.otel.enabled | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_SERVICE_NAME
+              value: {{ include "ai-app.name" . }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext: {{- include "ai-app.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+---
+# NodePort: ALB "instance" target mode NodePort pe bhejta hai (k3s pods ke IP VPC ke nahi hote,
+# isliye "ip" target mode kaam nahi karta. Problems faced #2)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ai-app.name" . }}
+  labels: {{- include "ai-app.labels" . | nindent 4 }}
+spec:
+  type: NodePort
+  selector: {{- include "ai-app.selector" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

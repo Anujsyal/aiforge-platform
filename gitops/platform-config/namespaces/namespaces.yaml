@@ -1,0 +1,72 @@
+# Pod Security Admission (PSA) har namespace pe label se:
+#   restricted = non-root, no privilege escalation, drop ALL caps, seccomp (sabse strict)
+#   baseline   = privileged/hostPath jaisi khatarnak cheezein band, root allowed
+# Tenant (team) namespaces hamesha restricted (ApplicationSet lagata hai, Kyverno verify karta hai).
+# Third-party images jo root pe chalti hain (LiteLLM, Vault...) unke namespaces baseline + warn restricted.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-serving
+  labels:
+    aiforge.io/platform: "true"
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ai-gateway
+  labels:
+    aiforge.io/platform: "true"
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vector-db
+  labels:
+    aiforge.io/platform: "true"
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: observability
+  labels:
+    aiforge.io/platform: "true"
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    aiforge.io/platform: "true"
+    # node-exporter hostNetwork/hostPath use karta hai → privileged chahiye
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault
+  labels:
+    aiforge.io/platform: "true"
+    pod-security.kubernetes.io/enforce: baseline
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: backstage
+  labels:
+    aiforge.io/platform: "true"
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opencost
+  labels:
+    aiforge.io/platform: "true"
+    pod-security.kubernetes.io/enforce: baseline

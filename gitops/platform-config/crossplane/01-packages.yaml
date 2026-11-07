@@ -1,0 +1,51 @@
+# Crossplane packages. crossplane-contrib wale (xpkg.crossplane.io) use kiye: Upbound registry ke
+# official provider packages ke purane versions ab bina subscription pull nahi hote (Problems faced #10).
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-aws-s3
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  package: xpkg.crossplane.io/crossplane-contrib/provider-aws-s3:v2.9.0
+---
+# Qdrant collection banane/delete karne ke liye (Qdrant ka koi Crossplane provider nahi; REST API call)
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: provider-http
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  package: xpkg.crossplane.io/crossplane-contrib/provider-http:v1.0.15
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-go-templating
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  package: xpkg.crossplane.io/crossplane-contrib/function-go-templating:v0.13.2
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Function
+metadata:
+  name: function-auto-ready
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  package: xpkg.crossplane.io/crossplane-contrib/function-auto-ready:v0.7.3
+---
+# Crossplane v2 composition plain Kubernetes resources (ConfigMap) bhi bana sakti hai,
+# par Crossplane ke ServiceAccount ko unki RBAC permission alag se deni padti hai.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crossplane-compose-configmaps
+  labels:
+    rbac.crossplane.io/aggregate-to-crossplane: "true"
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]

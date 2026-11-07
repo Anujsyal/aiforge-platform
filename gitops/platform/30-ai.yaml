@@ -1,0 +1,74 @@
+# WAVE 0: AI serving layer. Ollama (models) → LiteLLM (gateway) ; Qdrant (vector DB)
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ollama
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/platform-config/ai-serving/ollama
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-serving
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: litellm
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/platform-config/ai-serving/litellm
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-gateway
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: qdrant
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://qdrant.github.io/qdrant-helm
+    chart: qdrant
+    targetRevision: 1.20.0
+    helm:
+      valuesObject:
+        replicaCount: 1
+        persistence:
+          size: 5Gi
+          storageClassName: local-path
+        resources:
+          requests: { cpu: 100m, memory: 256Mi }
+          limits: { memory: 1Gi }
+        metrics:
+          serviceMonitor:
+            enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vector-db
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

@@ -1,0 +1,108 @@
+# WAVE -3: core add-ons ki configuration (policies, secret store, Crossplane API, platform netpols, dashboards)
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/platform-config/kyverno-policies
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: secrets-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/platform-config/secrets
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-secrets
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    # Target namespaces (ai-gateway, monitoring...) shayad abhi bane na hon
+    syncOptions: [CreateNamespace=true]
+    retry:
+      limit: 20
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: crossplane-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/platform-config/crossplane
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: crossplane-system
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    # Provider/Function packages install hone tak unke CRDs nahi hote → dry-run skip
+    syncOptions: [SkipDryRunOnMissingResource=true, ServerSideApply=true]
+    retry:
+      limit: 20
+      backoff: { duration: 30s, factor: 2, maxDuration: 5m }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-network-policies
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/platform-config/network-policies
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/platform-config/monitoring
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [ServerSideApply=true]

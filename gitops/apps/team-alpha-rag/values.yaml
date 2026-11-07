@@ -1,0 +1,7 @@
+# Sirf jo default (charts/ai-app/values.yaml) se alag hai
+llm:
+  chatModel: llama3.2-1b
+vectorStore:
+  size: small
+  rawDocsBucket: false
+replicas: 1

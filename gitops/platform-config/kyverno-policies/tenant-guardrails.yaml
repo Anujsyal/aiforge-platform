@@ -1,0 +1,161 @@
+# Tenant (team) namespaces ke guardrails. Sab Enforce. Platform namespaces pe lagu nahi.
+---
+# 1. Sirf hamari ECR se images (Docker Hub se random image nahi)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+spec:
+  background: true
+  rules:
+    - name: only-aiforge-ecr
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: { aiforge.io/tenant: "true" }
+      validate:
+        failureAction: Enforce
+        message: "Tenant images must come from <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/"
+        pattern:
+          spec:
+            =(initContainers):
+              - image: "<ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/*"
+            containers:
+              - image: "<ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/*"
+---
+# 2. SHADOW AI (config layer): external AI provider keys/URLs pods mein nahi.
+#    Network layer (NetworkPolicy) to block karta hi hai; ye policy galti ko deploy time pe hi pakadti hai
+#    aur developer ko clear message deti hai ("gateway use karo").
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: block-shadow-ai
+spec:
+  background: true
+  rules:
+    - name: no-external-ai-env
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: { aiforge.io/tenant: "true" }
+      validate:
+        failureAction: Enforce
+        message: >-
+          Direct external AI provider access is not allowed. Use the LiteLLM gateway
+          (http://litellm.ai-gateway.svc.cluster.local:4000/v1) with your team key.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.containers[].env[].name || `[]` }}"
+                operator: AnyIn
+                value: [OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, GOOGLE_API_KEY, COHERE_API_KEY, MISTRAL_API_KEY, GROQ_API_KEY]
+              - key: "{{ request.object.spec.containers[].env[].value || `[]` }}"
+                operator: AnyIn
+                value: ["*api.openai.com*", "*api.anthropic.com*", "*generativelanguage.googleapis.com*", "*api.cohere.ai*", "*api.mistral.ai*", "*api.groq.com*"]
+---
+# 3. Cost showback ke liye labels zaruri (OpenCost team label se kharcha baant-ta hai)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-team-labels
+spec:
+  background: true
+  rules:
+    - name: team-and-cost-center
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: { aiforge.io/tenant: "true" }
+      validate:
+        failureAction: Enforce
+        message: "Pods need labels aiforge.io/team and aiforge.io/cost-center (FinOps showback)."
+        pattern:
+          metadata:
+            labels:
+              aiforge.io/team: "?*"
+              aiforge.io/cost-center: "?*"
+---
+# 4. Requests/limits zaruri (warna ek team poora node kha jaaye, aur OpenCost ka allocation galat)
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-requests-limits
+spec:
+  background: true
+  rules:
+    - name: cpu-memory
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: { aiforge.io/tenant: "true" }
+      validate:
+        failureAction: Enforce
+        message: "CPU/memory requests and memory limits are required."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  requests:
+                    cpu: "?*"
+                    memory: "?*"
+                  limits:
+                    memory: "?*"
+---
+# 5. Tenant namespace PSA "restricted" ke bina nahi ban sakta
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: tenant-namespace-psa-restricted
+spec:
+  background: true
+  rules:
+    - name: psa-restricted
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+              selector:
+                matchLabels: { aiforge.io/tenant: "true" }
+      validate:
+        failureAction: Enforce
+        message: "Tenant namespaces must enforce Pod Security 'restricted'."
+        pattern:
+          metadata:
+            labels:
+              pod-security.kubernetes.io/enforce: restricted
+              aiforge.io/team: "?*"
+---
+# 6. Har tenant namespace mein default-deny NetworkPolicy KHUD ban jaati hai (generate).
+#    Chart ke allow rules iske upar additive hain. Koi chart bhool bhi jaaye to bhi egress band.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-default-deny
+spec:
+  rules:
+    - name: default-deny-all
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+              selector:
+                matchLabels: { aiforge.io/tenant: "true" }
+      generate:
+        generateExisting: true  # pehle se bane tenant namespaces mein bhi (sirf naye nahi)
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        name: default-deny-all
+        namespace: "{{ request.object.metadata.name }}"
+        synchronize: true       # koi delete kare to Kyverno wapas bana deta hai
+        data:
+          spec:
+            podSelector: {}
+            policyTypes: [Ingress, Egress]

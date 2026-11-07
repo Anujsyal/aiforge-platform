@@ -1,0 +1,126 @@
+# Backstage in-cluster. Image CI (backstage-image.yml) banata hai; tag kustomization.yaml mein.
+# Access: kubectl -n backstage port-forward svc/backstage 7007:7007  →  http://localhost:7007
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backstage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backstage
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000          # node image ka "node" user
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: backstage
+          image: <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/backstage
+          ports:
+            - { name: http, containerPort: 7007 }
+          env:
+            - { name: POSTGRES_HOST, value: backstage-postgres }
+            - { name: POSTGRES_PORT, value: "5432" }
+            - { name: POSTGRES_USER, value: backstage }
+            - { name: NODE_OPTIONS, value: "--max-old-space-size=768" }
+          envFrom:
+            - secretRef:
+                name: backstage-secrets   # GITHUB_TOKEN, POSTGRES_PASSWORD, BACKEND_SECRET
+          readinessProbe:
+            httpGet: { path: /.backstage/health/v1/readiness, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /.backstage/health/v1/liveness, port: http }
+            initialDelaySeconds: 90
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage
+  namespace: backstage
+spec:
+  selector:
+    app.kubernetes.io/name: backstage
+  ports:
+    - { name: http, port: 7007, targetPort: http }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: backstage-postgres
+  namespace: backstage
+spec:
+  serviceName: backstage-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: backstage-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backstage-postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        fsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - { name: POSTGRES_USER, value: backstage }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: backstage-secrets, key: POSTGRES_PASSWORD }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - { name: pg, containerPort: 5432 }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 384Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql }
+      volumes:
+        - name: run
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage-postgres
+  namespace: backstage
+spec:
+  selector:
+    app.kubernetes.io/name: backstage-postgres
+  ports:
+    - { name: pg, port: 5432, targetPort: pg }

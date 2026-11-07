@@ -1,0 +1,114 @@
+# GOLDEN PATH: "Create RAG App"
+# Developer form bharta hai → template gitops/apps/<name>/ (app.yaml, values.yaml, catalog-info.yaml)
+# ke saath aiforge-platform repo pe PULL REQUEST kholta hai. Merge = ApplicationSet deploy kar deta hai.
+# Koi kubectl nahi, koi AWS console nahi, koi YAML copy-paste nahi.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: create-rag-app
+  title: Create RAG App
+  description: >-
+    Secure RAG app on AIForge: own namespace, LiteLLM team key, Qdrant VectorStore,
+    eval-gated signed image, cost showback. Live ~10 min after PR merge.
+  tags: [rag, ai, recommended]
+spec:
+  owner: group:platform-team
+  type: rag-app
+
+  parameters:
+    - title: App details
+      required: [name, owner]
+      properties:
+        name:
+          title: App name
+          type: string
+          description: Namespace aur URL (/apps/<name>) bhi yahi banega
+          pattern: "^[a-z0-9][a-z0-9-]{2,30}[a-z0-9]$"
+          ui:autofocus: true
+        description:
+          title: Description
+          type: string
+          default: Internal docs Q&A assistant
+        owner:
+          title: Owning team
+          type: string
+          ui:field: OwnerPicker
+          ui:options:
+            catalogFilter:
+              kind: Group
+        costCenter:
+          title: Cost center
+          type: string
+          default: cc-default
+
+    - title: AI settings
+      properties:
+        chatModel:
+          title: Chat model
+          type: string
+          default: llama3.2-1b
+          enum: [llama3.2-1b, qwen2.5-0.5b]
+          enumNames: ["Llama 3.2 1B (default, better)", "Qwen 2.5 0.5B (fastest, cheapest)"]
+        vectorSize:
+          title: Vector store size
+          type: string
+          default: small
+          enum: [small, medium]
+        rawDocsBucket:
+          title: Private S3 bucket for raw documents
+          type: boolean
+          default: false
+        monthlyBudgetUsd:
+          title: Monthly LLM budget (USD)
+          type: number
+          default: 25
+          maximum: 100
+          description: 100 se upar FinOps approval chahiye
+
+  steps:
+    - id: fetch
+      name: Render app config
+      action: fetch:template
+      input:
+        url: ./skeleton
+        targetPath: gitops/apps/${{ parameters.name }}
+        values:
+          name: ${{ parameters.name }}
+          description: ${{ parameters.description }}
+          owner: ${{ parameters.owner }}
+          team: ${{ parameters.owner | parseEntityRef | pick('name') }}
+          costCenter: ${{ parameters.costCenter }}
+          chatModel: ${{ parameters.chatModel }}
+          vectorSize: ${{ parameters.vectorSize }}
+          rawDocsBucket: ${{ parameters.rawDocsBucket }}
+          githubUser: <GITHUB_USER>
+
+    - id: pr
+      name: Open pull request
+      action: publish:github:pull-request
+      input:
+        repoUrl: github.com?owner=<GITHUB_USER>&repo=aiforge-platform
+        branchName: rag-app/${{ parameters.name }}
+        title: "feat(rag-app): ${{ parameters.name }} for ${{ parameters.owner | parseEntityRef | pick('name') }}"
+        description: |
+          New RAG app from the **Create RAG App** golden path.
+
+          | Field | Value |
+          |---|---|
+          | App | `${{ parameters.name }}` |
+          | Team | `${{ parameters.owner }}` |
+          | Model | `${{ parameters.chatModel }}` |
+          | Vector store | `${{ parameters.vectorSize }}` (S3 bucket: ${{ parameters.rawDocsBucket }}) |
+          | Budget | ${{ parameters.monthlyBudgetUsd }} USD / month |
+
+          **Platform team checklist (merge se pehle):**
+          ```
+          ./scripts/litellm-onboard-team.sh ${{ parameters.owner | parseEntityRef | pick('name') }} ${{ parameters.name }} ${{ parameters.monthlyBudgetUsd }} ${{ parameters.chatModel }}
+          ```
+
+  output:
+    links:
+      - title: Pull request
+        url: ${{ steps.pr.output.remoteUrl }}
+      - title: Argo CD (port-forward 8080)
+        url: http://localhost:8080/applications/argocd/${{ parameters.name }}

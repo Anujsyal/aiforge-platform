@@ -1,0 +1,90 @@
+# Backstage ke andar copy karna hai:  backstage/app/app-config.production.yaml  (guide G2)
+# Image ke andar bake hota hai; secrets env vars se (Vault → ESO → Secret backstage-secrets)
+app:
+  title: AIForge Portal
+  baseUrl: http://localhost:7007      # kubectl port-forward se kholte hain
+
+organization:
+  name: AIForge
+
+backend:
+  baseUrl: http://localhost:7007
+  listen:
+    port: 7007
+  auth:
+    externalAccess:
+      - type: static
+        options:
+          token: ${BACKEND_SECRET}
+          subject: platform-automation
+  database:
+    client: pg
+    connection:
+      host: ${POSTGRES_HOST}
+      port: ${POSTGRES_PORT}
+      user: ${POSTGRES_USER}
+      password: ${POSTGRES_PASSWORD}
+
+integrations:
+  github:
+    - host: github.com
+      token: ${GITHUB_TOKEN}           # fine-grained PAT: sirf aiforge-platform, Contents + Pull requests RW
+
+auth:
+  providers:
+    # LAB ONLY: guest login. Production mein GitHub/OIDC auth provider.
+    guest:
+      dangerouslyAllowOutsideDevelopment: true
+
+catalog:
+  rules:
+    - allow: [Component, System, API, Resource, Location, Template, Group, User, Domain]
+  locations:
+    - type: url
+      target: https://github.com/<GITHUB_USER>/aiforge-platform/blob/main/backstage/catalog/all.yaml
+    - type: url
+      target: https://github.com/<GITHUB_USER>/aiforge-platform/blob/main/backstage/templates/create-rag-app/template.yaml
+      rules:
+        - allow: [Template]
+    # Glob: har naya RAG app (template ka PR merge hote hi) catalog mein khud aa jaata hai
+    - type: url
+      target: https://github.com/<GITHUB_USER>/aiforge-platform/blob/main/gitops/apps/*/catalog-info.yaml
+
+# ---------------- Scorecards (Tech Insights, OPTIONAL: guide G5) ----------------
+techInsights:
+  factRetrievers:
+    entityOwnershipFactRetriever:
+      cadence: "*/15 * * * *"
+      lifecycle: { timeToLive: { weeks: 2 } }
+    entityMetadataFactRetriever:
+      cadence: "*/15 * * * *"
+      lifecycle: { timeToLive: { weeks: 2 } }
+  factChecker:
+    checks:
+      groupOwnerCheck:
+        type: json-rules-engine
+        name: Owned by a team
+        description: spec.owner ek Group hona chahiye (user nahi), taaki on-call/cost clear ho
+        factIds: [entityOwnershipFactRetriever]
+        rule:
+          conditions:
+            all:
+              - { fact: hasGroupOwner, operator: equal, value: true }
+      descriptionCheck:
+        type: json-rules-engine
+        name: Has description
+        description: Catalog mein app ka description hai
+        factIds: [entityMetadataFactRetriever]
+        rule:
+          conditions:
+            all:
+              - { fact: hasDescription, operator: equal, value: true }
+      tagsCheck:
+        type: json-rules-engine
+        name: Has tags
+        description: Discoverability ke liye tags
+        factIds: [entityMetadataFactRetriever]
+        rule:
+          conditions:
+            all:
+              - { fact: hasTags, operator: equal, value: true }

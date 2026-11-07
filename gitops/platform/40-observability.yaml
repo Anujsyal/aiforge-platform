@@ -1,0 +1,222 @@
+# WAVE 0: Observability + FinOps
+#  traces : app (OTel SDK) → otel-collector → Langfuse (OTLP)   | LLM calls: LiteLLM → Langfuse
+#  metrics: Prometheus (kube-prometheus-stack, 10-core.yaml)    | dashboards: Grafana
+#  logs   : Alloy (DaemonSet) → Loki → Grafana
+#  cost   : OpenCost (Prometheus metrics + AWS pricing) per namespace/team
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-collector
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.178.2
+    helm:
+      valuesObject:
+        mode: deployment
+        fullnameOverride: otel-collector
+        image:
+          repository: otel/opentelemetry-collector-contrib
+        # LANGFUSE_OTLP_ENDPOINT, LANGFUSE_AUTH (ESO: platform-config/secrets)
+        extraEnvsFrom:
+          - secretRef:
+              name: otel-langfuse
+        resources:
+          requests: { cpu: 50m, memory: 128Mi }
+          limits: { memory: 384Mi }
+        config:
+          processors:
+            memory_limiter:
+              check_interval: 5s
+              limit_percentage: 80
+              spike_limit_percentage: 25
+            batch: {}
+          exporters:
+            otlphttp/langfuse:
+              endpoint: ${env:LANGFUSE_OTLP_ENDPOINT}
+              headers:
+                Authorization: "Basic ${env:LANGFUSE_AUTH}"
+          service:
+            pipelines:
+              traces:
+                receivers: [otlp]
+                processors: [memory_limiter, batch]
+                exporters: [otlphttp/langfuse]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: loki
+    targetRevision: 7.5.0
+    helm:
+      valuesObject:
+        deploymentMode: SingleBinary   # lab: ek pod. Production: Simple Scalable + S3
+        loki:
+          auth_enabled: false
+          commonConfig:
+            replication_factor: 1
+          storage:
+            type: filesystem
+          schemaConfig:
+            configs:
+              - from: "2024-04-01"
+                store: tsdb
+                object_store: filesystem
+                schema: v13
+                index: { prefix: loki_index_, period: 24h }
+          limits_config:
+            retention_period: 72h
+          compactor:
+            retention_enabled: true
+            delete_request_store: filesystem
+        singleBinary:
+          replicas: 1
+          persistence:
+            size: 5Gi
+            storageClass: local-path
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 1Gi }
+        backend: { replicas: 0 }
+        read: { replicas: 0 }
+        write: { replicas: 0 }
+        chunksCache: { enabled: false }
+        resultsCache: { enabled: false }
+        lokiCanary: { enabled: false }
+        test: { enabled: false }
+        gateway:
+          enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: 1.15.0
+    helm:
+      valuesObject:
+        # 1 replica Kubernetes API se SAARE pods ke logs tail karta hai (3 nodes ke liye kaafi).
+        # Bade cluster mein DaemonSet + node filter + hostPath (/var/log/pods) better hai.
+        controller:
+          type: deployment
+          replicas: 1
+        alloy:
+          resources:
+            requests: { cpu: 25m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          # loki.source.kubernetes: logs Kubernetes API se padhta hai (hostPath mount nahi chahiye → baseline PSA ok)
+          configMap:
+            content: |
+              discovery.kubernetes "pods" {
+                role = "pod"
+              }
+              discovery.relabel "pods" {
+                targets = discovery.kubernetes.pods.targets
+                rule {
+                  source_labels = ["__meta_kubernetes_namespace"]
+                  target_label  = "namespace"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_name"]
+                  target_label  = "pod"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_container_name"]
+                  target_label  = "container"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_label_aiforge_io_team"]
+                  target_label  = "team"
+                }
+              }
+              loki.source.kubernetes "pods" {
+                targets    = discovery.relabel.pods.output
+                forward_to = [loki.write.default.receiver]
+              }
+              loki.write "default" {
+                endpoint {
+                  url = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
+                }
+              }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: observability
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opencost
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: platform
+  source:
+    repoURL: https://opencost.github.io/opencost-helm-chart
+    chart: opencost
+    targetRevision: 2.5.33
+    helm:
+      valuesObject:
+        opencost:
+          exporter:
+            defaultClusterId: aiforge
+            resources:
+              requests: { cpu: 25m, memory: 128Mi }
+              limits: { memory: 512Mi }
+          prometheus:
+            internal:
+              enabled: true
+              serviceName: kube-prometheus-stack-prometheus
+              namespaceName: monitoring
+              port: 9090
+          metrics:
+            serviceMonitor:
+              enabled: true
+          ui:
+            enabled: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: opencost
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions: [CreateNamespace=true]

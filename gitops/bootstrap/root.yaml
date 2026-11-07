@@ -1,0 +1,21 @@
+# APP-OF-APPS ROOT. Ye EK BAAR haath se apply hota hai:
+#   kubectl apply -f gitops/bootstrap/root.yaml
+# Uske baad gitops/platform/*.yaml ki saari Applications Argo CD khud banata/sync karta hai.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aiforge-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    targetRevision: main
+    path: gitops/platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }

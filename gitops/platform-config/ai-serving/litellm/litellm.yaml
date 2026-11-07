@@ -1,0 +1,246 @@
+# LiteLLM = central AI gateway (OpenAI-compatible API).
+#   - Har team ki virtual key (budget, rate limit, allowed models)
+#   - Fallback: llama3.2-1b fail/timeout → qwen2.5-0.5b
+#   - Spend tracking per key/team (Postgres) → showback
+#   - Har call Langfuse ko (prompts, tokens, latency)
+# Secrets (master key, DB URL, Langfuse keys) Vault → ESO → Secret "litellm-secrets"
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: ai-gateway
+data:
+  config.yaml: |
+    model_list:
+      - model_name: llama3.2-1b
+        litellm_params:
+          model: ollama_chat/llama3.2:1b
+          api_base: http://ollama.ai-serving.svc.cluster.local:11434
+          timeout: 120
+          # Internal price (showback). Self-hosted model ka asli vendor price 0 hai, par CPU/node ka
+          # kharcha teams mein baantne ke liye "internal transfer price" lagate hain.
+          input_cost_per_token: 0.0000002
+          output_cost_per_token: 0.0000004
+        model_info:
+          description: Default chat model (CPU)
+      - model_name: qwen2.5-0.5b
+        litellm_params:
+          model: ollama_chat/qwen2.5:0.5b
+          api_base: http://ollama.ai-serving.svc.cluster.local:11434
+          timeout: 90
+          input_cost_per_token: 0.0000001
+          output_cost_per_token: 0.0000002
+        model_info:
+          description: Fallback chat model (smallest)
+      - model_name: nomic-embed-text
+        litellm_params:
+          model: ollama/nomic-embed-text
+          api_base: http://ollama.ai-serving.svc.cluster.local:11434
+          input_cost_per_token: 0.00000002
+          output_cost_per_token: 0
+        model_info:
+          mode: embedding
+
+    router_settings:
+      fallbacks:
+        - llama3.2-1b: ["qwen2.5-0.5b"]
+      num_retries: 1
+      timeout: 150
+
+    litellm_settings:
+      drop_params: true            # Ollama jo OpenAI params nahi samajhta wo hata do
+      request_timeout: 150
+      success_callback: ["langfuse"]
+      failure_callback: ["langfuse"]
+      # Prompt/response Langfuse mein jaata hai. PII wale data ke liye true kar (sirf metadata jaayega)
+      turn_off_message_logging: false
+
+    general_settings:
+      master_key: os.environ/LITELLM_MASTER_KEY
+      database_url: os.environ/DATABASE_URL
+      store_model_in_db: false     # models sirf Git (is ConfigMap) se, UI se nahi = GitOps
+      # Bina key ke koi call nahi; teams ko sirf apne allowed models
+      enforce_user_param: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: ai-gateway
+  labels:
+    app.kubernetes.io/name: litellm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm
+      annotations:
+        # ConfigMap badla → naya rollout (Argo CD ConfigMap change pe pods restart nahi karta)
+        aiforge.io/config-version: "1"
+    spec:
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: litellm
+          # TODO pin: https://github.com/BerriAI/litellm/releases se "main-v<ver>-stable" tag
+          image: ghcr.io/berriai/litellm:main-stable
+          args: ["--config", "/app/config.yaml", "--port", "4000", "--num_workers", "1"]
+          ports:
+            - { name: http, containerPort: 4000 }
+          envFrom:
+            - secretRef:
+                name: litellm-secrets   # LITELLM_MASTER_KEY, LITELLM_SALT_KEY, DATABASE_URL, LANGFUSE_*
+          readinessProbe:
+            httpGet: { path: /health/readiness, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health/liveliness, port: http }
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { memory: 1536Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: /app/config.yaml, subPath: config.yaml }
+      volumes:
+        - name: config
+          configMap: { name: litellm-config }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: ai-gateway
+  labels:
+    app.kubernetes.io/name: litellm
+spec:
+  selector:
+    app.kubernetes.io/name: litellm
+  ports:
+    - { name: http, port: 4000, targetPort: http }
+---
+# ---------------- Postgres (keys, teams, budgets, spend logs) ----------------
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: litellm-postgres
+  namespace: ai-gateway
+  labels:
+    app.kubernetes.io/name: litellm-postgres
+spec:
+  serviceName: litellm-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm-postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70          # alpine image ka postgres user
+        fsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - { name: POSTGRES_USER, value: litellm }
+            - { name: POSTGRES_DB, value: litellm }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: litellm-secrets, key: POSTGRES_PASSWORD }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          ports:
+            - { name: pg, containerPort: 5432 }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "litellm"] }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+            - { name: run, mountPath: /var/run/postgresql }
+      volumes:
+        - name: run
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-postgres
+  namespace: ai-gateway
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: litellm-postgres
+  ports:
+    - { name: pg, port: 5432, targetPort: pg }
+---
+# ---------------- NetworkPolicies ----------------
+# Gateway tak sirf tenant namespaces (label aiforge.io/tenant=true), Backstage aur monitoring aa sakte hain.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litellm-ingress
+  namespace: ai-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              aiforge.io/tenant: "true"
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: backstage
+        - podSelector: {}     # same namespace (kubectl port-forward bhi kaam karta hai: wo kubelet se aata hai)
+      ports:
+        - { protocol: TCP, port: 4000 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-only-from-litellm
+  namespace: ai-gateway
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: litellm-postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: litellm
+      ports:
+        - { protocol: TCP, port: 5432 }

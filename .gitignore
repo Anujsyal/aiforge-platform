@@ -1,0 +1,32 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+terraform.tfvars
+backend.hcl
+!*.example
+
+# Secrets - kabhi commit mat karna
+*.pem
+*.key
+.env
+vault-init.json
+kubeconfig*
+*.kubeconfig
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Eval outputs
+evals/results/
+evals/.promptfoo/
+
+# Backstage (create-app se banega; sirf hamari overlay files commit hongi, guide G1 dekh)
+backstage/app/node_modules/
+backstage/app/dist-types/
+backstage/app/packages/*/dist/

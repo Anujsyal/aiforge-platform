@@ -1,0 +1,131 @@
+# VectorStore → (1) Qdrant collection (provider-http Request: PUT/GET/DELETE)
+#             → (2) ConfigMap "<name>-vectorstore" (connection info, app ke liye)
+#             → (3) optional: private S3 bucket + public access block (provider-aws-s3)
+# VectorStore delete kiya → collection aur bucket bhi delete (lifecycle Crossplane ka).
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: vectorstore-qdrant
+spec:
+  compositeTypeRef:
+    apiVersion: platform.aiforge.io/v1alpha1
+    kind: VectorStore
+  mode: Pipeline
+  pipeline:
+    - step: render
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $xr := .observed.composite.resource }}
+            {{- $name := $xr.spec.collectionName }}
+            {{- $ns := $xr.metadata.namespace }}
+            {{- $url := printf "http://qdrant.vector-db.svc.cluster.local:6333/collections/%s" $name }}
+            {{- $shards := 1 }}{{- if eq $xr.spec.size "medium" }}{{- $shards = 2 }}{{- end }}
+            ---
+            apiVersion: http.m.crossplane.io/v1alpha2
+            kind: Request
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: qdrant-collection
+            spec:
+              providerConfigRef:
+                name: default
+                kind: ClusterProviderConfig
+              forProvider:
+                waitTimeout: 2m
+                headers:
+                  Content-Type: ["application/json"]
+                payload:
+                  baseUrl: {{ $url }}
+                  body: |
+                    {"vectors": {"size": {{ $xr.spec.dimension }}, "distance": "Cosine"}, "shard_number": {{ $shards }}}
+                mappings:
+                  - action: CREATE
+                    method: PUT
+                    url: .payload.baseUrl
+                    body: .payload.body
+                  - action: OBSERVE
+                    method: GET
+                    url: .payload.baseUrl
+                  - action: REMOVE
+                    method: DELETE
+                    url: .payload.baseUrl
+                # Qdrant GET ka response payload jaisa nahi dikhta, isliye "200 = sab theek" custom check
+                expectedResponseCheck:
+                  type: CUSTOM
+                  logic: |
+                    if .response.statusCode == 200 then true else false end
+                isRemovedCheck:
+                  type: CUSTOM
+                  logic: |
+                    if .response.statusCode == 404 then true else false end
+            ---
+            apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: {{ $name }}-vectorstore
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: connection-info
+                gotemplating.fn.crossplane.io/ready: "True"
+              labels:
+                aiforge.io/team: {{ $xr.spec.team }}
+            data:
+              QDRANT_URL: http://qdrant.vector-db.svc.cluster.local:6333
+              QDRANT_COLLECTION: {{ $name }}
+              EMBED_DIM: "{{ $xr.spec.dimension }}"
+            {{- $bucket := "" }}
+            {{- if $xr.spec.rawDocsBucket }}
+            {{- $bucket = printf "aiforge-vs-%s-%s" $ns $name | trunc 63 | trimSuffix "-" }}
+            ---
+            apiVersion: s3.aws.m.upbound.io/v1beta1
+            kind: Bucket
+            metadata:
+              name: {{ $bucket }}
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: raw-docs-bucket
+                crossplane.io/external-name: {{ $bucket }}
+            spec:
+              providerConfigRef:
+                name: default
+                kind: ClusterProviderConfig
+              forProvider:
+                region: ap-south-1
+                forceDestroy: true
+                tags:
+                  Project: aiforge
+                  Team: {{ $xr.spec.team }}
+                  ManagedBy: crossplane
+            ---
+            apiVersion: s3.aws.m.upbound.io/v1beta1
+            kind: BucketPublicAccessBlock
+            metadata:
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: raw-docs-bucket-pab
+            spec:
+              providerConfigRef:
+                name: default
+                kind: ClusterProviderConfig
+              forProvider:
+                region: ap-south-1
+                bucketRef:
+                  name: {{ $bucket }}
+                blockPublicAcls: true
+                blockPublicPolicy: true
+                ignorePublicAcls: true
+                restrictPublicBuckets: true
+            {{- end }}
+            ---
+            apiVersion: platform.aiforge.io/v1alpha1
+            kind: VectorStore
+            status:
+              collection: {{ $name }}
+              endpoint: {{ $url }}
+              bucket: "{{ $bucket }}"
+    - step: auto-ready
+      functionRef:
+        name: function-auto-ready

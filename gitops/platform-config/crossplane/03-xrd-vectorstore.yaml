@@ -1,0 +1,63 @@
+# SELF-SERVICE API: VectorStore
+# Team ko Qdrant ya AWS ka kuch nahi pata hona chahiye. Bas ye likho:
+#   apiVersion: platform.aiforge.io/v1alpha1
+#   kind: VectorStore
+#   spec: { collectionName: my-app, dimension: 768, size: small, rawDocsBucket: false, team: alpha }
+# Platform team ki Composition (04-composition.yaml) decide karti hai ki andar kya banega.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: vectorstores.platform.aiforge.io
+spec:
+  scope: Namespaced          # Crossplane v2: XR seedha team ke namespace mein (claims ki zarurat nahi)
+  group: platform.aiforge.io
+  names:
+    kind: VectorStore
+    plural: vectorstores
+  defaultCompositionRef:
+    name: vectorstore-qdrant
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      additionalPrinterColumns:
+        - name: COLLECTION
+          type: string
+          jsonPath: .status.collection
+        - name: BUCKET
+          type: string
+          jsonPath: .status.bucket
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: [collectionName, team]
+              properties:
+                collectionName:
+                  type: string
+                  pattern: "^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$"
+                dimension:
+                  type: integer
+                  default: 768
+                  enum: [384, 768, 1024, 1536]
+                size:
+                  type: string
+                  default: small
+                  enum: [small, medium]
+                rawDocsBucket:
+                  type: boolean
+                  default: false
+                  description: "true = raw documents ke liye private S3 bucket bhi"
+                team:
+                  type: string
+            status:
+              type: object
+              properties:
+                collection:
+                  type: string
+                endpoint:
+                  type: string
+                bucket:
+                  type: string

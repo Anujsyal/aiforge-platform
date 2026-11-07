@@ -1,0 +1,61 @@
+# Defaults. Har app sirf apni values.yaml mein jo alag hai wahi likhta hai (gitops/apps/<app>/values.yaml).
+# Image tag/digest CI likhta hai: gitops/release/rag-app.yaml
+
+appName: ""        # REQUIRED, namespace ka naam bhi yahi
+team: ""           # REQUIRED, cost showback + Vault path
+costCenter: ""
+
+image:
+  repository: ""   # <account>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/rag-app
+  tag: ""
+  digest: ""       # sha256:... (Kyverno signature digest pe verify karta hai)
+  pullPolicy: IfNotPresent
+
+replicas: 1
+
+llm:
+  gatewayUrl: http://litellm.ai-gateway.svc.cluster.local:4000/v1
+  chatModel: llama3.2-1b
+  embedModel: nomic-embed-text
+  embedDim: 768
+  maxTokens: 256
+  timeoutSeconds: 120
+
+vectorStore:
+  create: true             # Crossplane VectorStore XR banao
+  qdrantUrl: http://qdrant.vector-db.svc.cluster.local:6333
+  size: small              # small | medium (composition mein shards/replication)
+  rawDocsBucket: false     # true = S3 bucket bhi (raw documents ke liye)
+
+secrets:
+  # true: ESO Vault se laata hai (ClusterSecretStore "vault"). false: Secret "<app>-secrets" haath se (Phase 4)
+  useExternalSecret: true
+  vaultPath: ""            # default: teams/<team>/<appName>
+  refreshInterval: 1h
+
+ingress:
+  enabled: true
+  groupName: aiforge       # saare apps EK ALB share karte hain (kharcha)
+  inboundCidrs: ""         # REQUIRED jab enabled: tera IP/32 (gitops/release/rag-app.yaml mein central)
+  pathPrefix: /apps
+
+ingest:
+  onSync: true             # Argo CD PostSync hook: bundled sample docs ingest
+
+network:
+  vpcCidr: 10.20.0.0/16    # ALB/NodePort traffic isi range se aata hai (Terraform vpc_cidr)
+
+otel:
+  enabled: true
+  endpoint: http://otel-collector.observability.svc.cluster.local:4318
+
+serviceMonitor:
+  enabled: true
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: "1"
+    memory: 768Mi

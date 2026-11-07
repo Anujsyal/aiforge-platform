@@ -1,0 +1,14 @@
+# Grafana sidecar "grafana_dashboard" label wale ConfigMaps ko dashboards bana deta hai
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+resources:
+  - rules.yaml
+configMapGenerator:
+  - name: aiforge-dashboards
+    files:
+      - dashboards/aiforge-rag.json
+    options:
+      labels:
+        grafana_dashboard: "1"
+      disableNameSuffixHash: true

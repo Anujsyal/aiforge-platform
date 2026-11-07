@@ -1,0 +1,17 @@
+{{- if .Values.vectorStore.create }}
+# Crossplane v2 namespaced XR (claim ki zarurat nahi). Composition: gitops/platform-config/crossplane/
+apiVersion: platform.aiforge.io/v1alpha1
+kind: VectorStore
+metadata:
+  name: {{ include "ai-app.name" . }}
+  labels: {{- include "ai-app.labels" . | nindent 4 }}
+  annotations:
+    # Pehle VectorStore, phir Deployment (collection ready ho)
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  collectionName: {{ include "ai-app.name" . }}
+  dimension: {{ .Values.llm.embedDim }}
+  size: {{ .Values.vectorStore.size }}
+  rawDocsBucket: {{ .Values.vectorStore.rawDocsBucket }}
+  team: {{ include "ai-app.team" . }}
+{{- end }}

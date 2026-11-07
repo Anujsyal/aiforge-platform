@@ -1,0 +1,30 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "ai-app.name" . }}
+  labels: {{- include "ai-app.labels" . | nindent 4 }}
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: instance
+    # Saare apps ek hi ALB pe (group). Group ke saare Ingress ke annotations match hone chahiye.
+    alb.ingress.kubernetes.io/group.name: {{ .Values.ingress.groupName }}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/inbound-cidrs: {{ required "ingress.inboundCidrs is required (tera IP/32)" .Values.ingress.inboundCidrs | quote }}
+    alb.ingress.kubernetes.io/healthcheck-path: {{ include "ai-app.basePath" . }}/healthz
+    alb.ingress.kubernetes.io/tags: Project=aiforge,Team={{ include "ai-app.team" . }}
+    # LLM CPU pe slow hai: ALB ka default idle timeout 60s, isse 180s
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=180
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: {{ include "ai-app.basePath" . }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ai-app.name" . }}
+                port:
+                  name: http
+{{- end }}
