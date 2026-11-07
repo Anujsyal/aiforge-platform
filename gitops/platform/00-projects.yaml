@@ -29,7 +29,7 @@ metadata:
 spec:
   description: Team RAG apps (golden path)
   sourceRepos:
-    - https://github.com/<GITHUB_USER>/aiforge-platform.git
+    - https://github.com/Anujsyal/aiforge-platform.git
   destinations:
     - server: https://kubernetes.default.svc
       namespace: "*"
@@ -66,7 +66,7 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    repoURL: https://github.com/Anujsyal/aiforge-platform.git
     targetRevision: main
     path: gitops/platform-config/namespaces
   destination:

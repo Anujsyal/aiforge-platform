@@ -24,7 +24,7 @@ spec:
                   aiforge.io/tenant: "true"
       verifyImages:
         - imageReferences:
-            - "<ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/*"
+            - "770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/*"
           failureAction: Enforce
           mutateDigest: false     # chart pehle se digest use karta hai; mutate kiya to Argo CD drift dikhata
           verifyDigest: true      # tag-only image ref reject
@@ -36,7 +36,7 @@ spec:
             - entries:
                 - keyless:
                     issuer: https://token.actions.githubusercontent.com
-                    subject: "https://github.com/<GITHUB_USER>/aiforge-platform/.github/workflows/rag-app-ci.yml@refs/heads/main"
+                    subject: "https://github.com/Anujsyal/aiforge-platform/.github/workflows/rag-app-ci.yml@refs/heads/main"
                     rekor:
                       url: https://rekor.sigstore.dev
           attestations:
@@ -45,7 +45,7 @@ spec:
                 - entries:
                     - keyless:
                         issuer: https://token.actions.githubusercontent.com
-                        subject: "https://github.com/<GITHUB_USER>/aiforge-platform/.github/workflows/rag-app-ci.yml@refs/heads/main"
+                        subject: "https://github.com/Anujsyal/aiforge-platform/.github/workflows/rag-app-ci.yml@refs/heads/main"
                         rekor:
                           url: https://rekor.sigstore.dev
               conditions:

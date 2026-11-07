@@ -7,7 +7,9 @@ PARAM="${KUBECONFIG_PARAM:-/aiforge/k3s/kubeconfig}"
 OUT="${HOME}/.kube/aiforge.yaml"
 
 mkdir -p "$(dirname "$OUT")"
-aws ssm get-parameter --region "$REGION" --name "$PARAM" --with-decryption \
+# MSYS_NO_PATHCONV sirf isi command pe: Git Bash "/aiforge/k3s/kubeconfig" ko "C:/Program Files/Git/aiforge/..."
+# bana deta hai → ParameterNotFound. Globally mat lagana: phir KUBECONFIG jaise env vars bhi convert nahi hote.
+MSYS_NO_PATHCONV=1 aws ssm get-parameter --region "$REGION" --name "$PARAM" --with-decryption \
   --query Parameter.Value --output text > "$OUT"
 chmod 600 "$OUT" 2>/dev/null || true
 

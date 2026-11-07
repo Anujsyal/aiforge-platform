@@ -14,7 +14,7 @@ spec:
   goTemplateOptions: ["missingkey=error"]
   generators:
     - git:
-        repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+        repoURL: https://github.com/Anujsyal/aiforge-platform.git
         revision: main
         files:
           - path: gitops/apps/*/app.yaml
@@ -27,7 +27,7 @@ spec:
     spec:
       project: ai-apps
       source:
-        repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+        repoURL: https://github.com/Anujsyal/aiforge-platform.git
         targetRevision: main
         path: charts/ai-app
         helm:

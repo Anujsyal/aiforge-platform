@@ -5,17 +5,19 @@ cluster_name = "aiforge"
 github_repo  = "<your-github-username>/aiforge-platform"
 alert_emails = ["<your-email>"]
 
-# Sizing (guide section 1.6 mein kharcha)
-server_instance_type = "t3.large"
-agent_instance_type  = "t3.xlarge"
-agent_count          = 2
-agents_use_spot      = false
+# Sizing (guide section 1.6). Free plan account pe sirf free-tier-eligible types chalte hain
+# (t3.large/xlarge NAHI) → m7i-flex.large (2 vCPU, 8 GB). 1 server + 3 agents = 8 vCPU, 32 GB.
+# Paid account: server t3.large + 2 × t3.xlarge bhi chalega.
+server_instance_type = "m7i-flex.large"
+agent_instance_type  = "m7i-flex.large"
+agent_count          = 3
+agents_use_spot      = false   # Free plan pe spot mat use kar
 
 # Kharcha bachana ho to [] kar de (ECR pulls NAT se jayenge)
 interface_endpoints = ["ecr.api", "ecr.dkr"]
 
 # Pehle kisi project mein GitHub OIDC provider bana chuka hai to false
-create_github_oidc_provider = true
+create_github_oidc_provider = true   # "EntityAlreadyExists" aaye to false
 
 account_monthly_limit_usd = 60
 project_monthly_limit_usd = 40

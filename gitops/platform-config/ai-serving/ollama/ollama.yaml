@@ -95,8 +95,9 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 30
           resources:
-            requests: { cpu: "2", memory: 4Gi }
-            limits: { cpu: "4", memory: 8Gi }
+            # Node m7i-flex.large = 2 vCPU / 8 GB. Request 2 CPU fit nahi hota (system pods bhi hain).
+            requests: { cpu: "1", memory: 3Gi }
+            limits: { cpu: "2", memory: 6Gi }
           volumeMounts:
             - { name: models, mountPath: /models }
             - { name: tmp, mountPath: /tmp }

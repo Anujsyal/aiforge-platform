@@ -23,7 +23,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: backstage
-          image: <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/backstage
+          image: 770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/backstage
           ports:
             - { name: http, containerPort: 7007 }
           env:

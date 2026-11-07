@@ -10,7 +10,7 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    repoURL: https://github.com/Anujsyal/aiforge-platform.git
     targetRevision: main
     path: gitops/platform-config/backstage
   destination:
@@ -29,7 +29,7 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    repoURL: https://github.com/Anujsyal/aiforge-platform.git
     targetRevision: main
     path: gitops/appsets
   destination:

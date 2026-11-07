@@ -1,8 +1,8 @@
 # CI (rag-app-ci.yml) is file ka image block update karta hai. Haath se mat badal (sirf inboundCidrs).
 # Saare RAG apps same signed + evaluated image chalate hain; farq sirf config (values.yaml) ka hai.
 image:
-  repository: <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/rag-app
+  repository: 770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/rag-app
   tag: "0.0.0"          # placeholder: pehla CI run asli tag + digest likhega
   digest: ""
 ingress:
-  inboundCidrs: <ADMIN_CIDR>   # tera public IP/32 (scripts/configure.sh bharta hai)
+  inboundCidrs: 122.161.49.234/32   # tera public IP/32 (scripts/configure.sh bharta hai)

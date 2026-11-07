@@ -19,7 +19,7 @@ spec:
       valuesObject:
         clusterName: aiforge
         region: ap-south-1
-        vpcId: <VPC_ID>                   # terraform output vpc_id (IMDS pe depend na rahe)
+        vpcId: vpc-090f7e7572c0ceb89                   # terraform output vpc_id (IMDS pe depend na rahe)
         replicaCount: 1
         enableServiceMutatorWebhook: false # LoadBalancer Services ko NLB mein mat badlo
         resources:

@@ -17,13 +17,13 @@ spec:
                 matchLabels: { aiforge.io/tenant: "true" }
       validate:
         failureAction: Enforce
-        message: "Tenant images must come from <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/"
+        message: "Tenant images must come from 770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/"
         pattern:
           spec:
             =(initContainers):
-              - image: "<ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/*"
+              - image: "770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/*"
             containers:
-              - image: "<ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/aiforge/*"
+              - image: "770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/*"
 ---
 # 2. SHADOW AI (config layer): external AI provider keys/URLs pods mein nahi.
 #    Network layer (NetworkPolicy) to block karta hi hai; ye policy galti ko deploy time pe hi pakadti hai

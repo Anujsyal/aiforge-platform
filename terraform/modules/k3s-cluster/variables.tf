@@ -38,17 +38,17 @@ variable "alb_controller_version" {
 
 variable "server_instance_type" {
   type    = string
-  default = "t3.large" # 2 vCPU / 8 GB
+  default = "m7i-flex.large" # 2 vCPU / 8 GB, Free plan eligible (paid account: t3.large)
 }
 
 variable "agent_instance_type" {
   type    = string
-  default = "t3.xlarge" # 4 vCPU / 16 GB (Ollama + Langfuse ke liye)
+  default = "m7i-flex.large" # 2 vCPU / 8 GB, Free plan eligible (paid account: t3.xlarge)
 }
 
 variable "agent_count" {
   type    = number
-  default = 2
+  default = 3
 }
 
 variable "agents_use_spot" {

@@ -36,17 +36,17 @@ variable "alb_controller_version" {
 
 variable "server_instance_type" {
   type    = string
-  default = "t3.large"
+  default = "m7i-flex.large"
 }
 
 variable "agent_instance_type" {
   type    = string
-  default = "t3.xlarge"
+  default = "m7i-flex.large"
 }
 
 variable "agent_count" {
   type    = number
-  default = 2
+  default = 3
 }
 
 variable "agents_use_spot" {

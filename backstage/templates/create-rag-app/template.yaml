@@ -81,13 +81,13 @@ spec:
           chatModel: ${{ parameters.chatModel }}
           vectorSize: ${{ parameters.vectorSize }}
           rawDocsBucket: ${{ parameters.rawDocsBucket }}
-          githubUser: <GITHUB_USER>
+          githubUser: Anujsyal
 
     - id: pr
       name: Open pull request
       action: publish:github:pull-request
       input:
-        repoUrl: github.com?owner=<GITHUB_USER>&repo=aiforge-platform
+        repoUrl: github.com?owner=Anujsyal&repo=aiforge-platform
         branchName: rag-app/${{ parameters.name }}
         title: "feat(rag-app): ${{ parameters.name }} for ${{ parameters.owner | parseEntityRef | pick('name') }}"
         description: |

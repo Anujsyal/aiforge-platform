@@ -41,14 +41,14 @@ catalog:
     - allow: [Component, System, API, Resource, Location, Template, Group, User, Domain]
   locations:
     - type: url
-      target: https://github.com/<GITHUB_USER>/aiforge-platform/blob/main/backstage/catalog/all.yaml
+      target: https://github.com/Anujsyal/aiforge-platform/blob/main/backstage/catalog/all.yaml
     - type: url
-      target: https://github.com/<GITHUB_USER>/aiforge-platform/blob/main/backstage/templates/create-rag-app/template.yaml
+      target: https://github.com/Anujsyal/aiforge-platform/blob/main/backstage/templates/create-rag-app/template.yaml
       rules:
         - allow: [Template]
     # Glob: har naya RAG app (template ka PR merge hote hi) catalog mein khud aa jaata hai
     - type: url
-      target: https://github.com/<GITHUB_USER>/aiforge-platform/blob/main/gitops/apps/*/catalog-info.yaml
+      target: https://github.com/Anujsyal/aiforge-platform/blob/main/gitops/apps/*/catalog-info.yaml
 
 # ---------------- Scorecards (Tech Insights, OPTIONAL: guide G5) ----------------
 techInsights:

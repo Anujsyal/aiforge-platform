@@ -187,15 +187,27 @@ curl -s https://checkip.amazonaws.com    # ALB sirf isi IP/32 ko allow karega
 
 | Cheez | ~$/hour | Note |
 |---|---|---|
-| 1 × t3.large (server) | 0.09 | |
-| 2 × t3.xlarge (agents) | 0.36 | `agents_use_spot = true` se ~0.12 |
+| 1 × m7i-flex.large (server) | ~0.10 | Free plan eligible (2 vCPU, 8 GB) |
+| 3 × m7i-flex.large (agents) | ~0.30 | Paid account pe t3.large + 2 × t3.xlarge bhi chalega |
 | NAT Gateway | 0.056 + data | sabse "chupa" kharcha |
 | ALB | 0.024 + LCU | sirf jab Ingress bana |
 | ECR interface endpoints (2 × 2 AZ) | 0.044 | `interface_endpoints = []` se 0 |
 | EBS 160 GB gp3 + public IPv4 | ~0.025 | |
-| **Total** | **~$0.60/hr (~₹50/hr)** | Roz kaam khatam → `terraform destroy` (K) |
+| **Total** | **~$0.50/hr (~₹42/hr)** | Roz kaam khatam → `terraform destroy` (K) |
 
 LLM tokens ka koi bill nahi (self-hosted). Langfuse Cloud Hobby free.
+
+### 1.7 Free plan account (asli run mein yahi hua, 2026-11-08)
+Naye AWS accounts **Free plan** pe hote hain. Usme sirf free-tier-eligible instance types launch hote hain:
+```bash
+aws ec2 describe-instance-types --region ap-south-1 --filters Name=free-tier-eligible,Values=true   --query 'InstanceTypes[].[InstanceType,VCpuInfo.DefaultVCpus,MemoryInfo.SizeInMiB]' --output table
+# t3.micro/small, c7i-flex.large (4 GB), m7i-flex.large (8 GB) ...
+```
+Isliye defaults ab **1 server + 3 agents, sab m7i-flex.large** hain (8 vCPU, 32 GB). vCPU quota check kar (8 chahiye):
+```bash
+aws service-quotas get-service-quota --region ap-south-1 --service-code ec2 --quota-code L-1216C47A --query 'Quota.Value'
+```
+Free plan pe kharcha credits se katta hai; credits khatam hone pe account band hota hai, card se paisa nahi katta.
 
 ---
 
@@ -470,7 +482,7 @@ Agle din `terraform apply -target=module.vpc` se ~3 min mein wapas ban jaayega.
 
 ### 2A. Manual — ek node haath se (seekhne ke liye, phir terminate)
 1. **IAM → Roles → Create** `aiforge-lab-node`: EC2 trust, policies `AmazonSSMManagedInstanceCore` + `AmazonEC2ContainerRegistryReadOnly`.
-2. **EC2 → Launch**: Ubuntu 24.04, t3.large, **Key pair: Proceed without**, VPC `aiforge`, subnet **private-a**, **Auto-assign public IP: Disable**, SG: koi inbound rule nahi, outbound all. Advanced → IAM instance profile `aiforge-lab-node`, **Metadata version: V2 only**, **hop limit 2**.
+2. **EC2 → Launch**: Ubuntu 24.04, m7i-flex.large, **Key pair: Proceed without**, VPC `aiforge`, subnet **private-a**, **Auto-assign public IP: Disable**, SG: koi inbound rule nahi, outbound all. Advanced → IAM instance profile `aiforge-lab-node`, **Metadata version: V2 only**, **hop limit 2**.
 3. 2-3 min baad: **EC2 → Instance → Connect → Session Manager → Connect**. Ye bina SSH, bina public IP ke shell hai (SSM agent NAT ke through AWS se baat karta hai).
    ```bash
    curl -sfL https://get.k3s.io | sh -s - server --disable traefik --disable servicelb
@@ -888,7 +900,7 @@ Saare demos expected error de rahe, app chal raha · push.
 
 ## Phase 7: Observability
 
-**Langfuse kyun Cloud?** Langfuse v4 self-host chart (2.x) ab ClickHouse **operator** + Keeper (3 replicas) + Postgres + Valkey + MinIO maangta hai; ClickHouse akela 2 Gi request karta hai. Hamare 40 GB cluster pe ye ~6 GB extra hai. Isliye lab mein **Langfuse Cloud free tier**; self-host `helm show values langfuse/langfuse` + ClickHouse operator se ho sakta hai (H mein). Trade-off: prompts/responses cloud mein jaate hain → sirf sample/fake data use kar, ya LiteLLM mein `turn_off_message_logging: true`.
+**Langfuse kyun Cloud?** Langfuse v4 self-host chart (2.x) ab ClickHouse **operator** + Keeper (3 replicas) + Postgres + Valkey + MinIO maangta hai; ClickHouse akela 2 Gi request karta hai. Hamare 32 GB cluster (4 × 8 GB) pe ye ~6 GB extra hai. Isliye lab mein **Langfuse Cloud free tier**; self-host `helm show values langfuse/langfuse` + ClickHouse operator se ho sakta hai (H mein). Trade-off: prompts/responses cloud mein jaate hain → sirf sample/fake data use kar, ya LiteLLM mein `turn_off_message_logging: true`.
 
 ### 7.1 Stack
 ```bash
@@ -1043,7 +1055,7 @@ LITELLM_MASTER_KEY=$(kubectl -n ai-gateway get secret litellm-secrets -o jsonpat
 GitHub secret `INFRACOST_API_KEY` add kar. Demo PR:
 ```bash
 git checkout -b cost-demo
-sed -i 's/agent_instance_type  = "t3.xlarge"/agent_instance_type  = "t3.2xlarge"/' terraform/stacks/platform/terraform.tfvars.example
+sed -i 's/agent_count          = 3/agent_count          = 5/' terraform/stacks/platform/terraform.tfvars.example
 git commit -am "demo: bigger agents" && git push -u origin cost-demo
 ```
 PR pe Infracost comment: monthly cost kitna badhega. PR close kar (merge nahi).
@@ -1109,6 +1121,7 @@ kubectl -n ai-gateway get deploy litellm -w      # ~10s mein wapas 1 (selfHeal)
 | Bootstrap log: `snap ... aws-cli` error | snapd abhi ready nahi | `sudo snap wait system seed.loaded && sudo bash /var/lib/cloud/instance/scripts/part-001` |
 | Agent `NotReady` / join nahi | SG self-rule / server IP | `sudo journalctl -u k3s-agent -n 50`; SG `aiforge-k3s-nodes` self ALL |
 | Git Bash: path `/apps/x` → `C:/Program Files/Git/apps/x` | MSYS path conversion | Command se pehle `MSYS_NO_PATHCONV=1` |
+| `get-kubeconfig.sh` / `aws ssm get-parameter --name /aiforge/...`: `ParameterNotFound`, jabki bootstrap log mein upload ho chuka | Git Bash ne `/aiforge/k3s/kubeconfig` ko Windows path bana diya (asli run, 2026-11-08) | Script ab sirf us command pe `MSYS_NO_PATHCONV=1` lagati hai. Haath se: `MSYS_NO_PATHCONV=1 aws ssm get-parameter ...`. **Globally export mat kar**: phir `KUBECONFIG` env bhi convert nahi hota aur kubectl file nahi padh paata |
 | `$'\r': command not found` | CRLF | `.gitattributes` hai; `git add --renormalize .` |
 | Ingress `ADDRESS` khaali | ALB controller error | `kubectl -n kube-system logs deploy/aws-load-balancer-controller \| tail`; subnet tags (`kubernetes.io/role/elb`), `vpcId` value |
 | Controller log: `unable to resolve at least one subnet` | Public subnet tags missing | Terraform VPC module tags; manual VPC mein 1A step 2 |
@@ -1151,6 +1164,8 @@ kubectl -n ai-gateway get deploy litellm -w      # ~10s mein wapas 1 (selfHeal)
 | Backstage template `publish:github:pull-request` 403/404 | PAT permissions | Fine-grained: Contents RW + Pull requests RW, repo selected |
 | Backstage glob location kuch nahi laata | GitHub integration token missing | `integrations.github.token`; Backstage logs |
 | `terraform destroy` atak gaya: VPC dependency | ALB/SG controller ne banaye (Terraform ko nahi pata) | K: pehle Ingress delete |
+| `RunInstances ... InvalidParameterCombination: instance type is not eligible for Free Tier` | Free plan account (1.7) | `m7i-flex.large` (ab default). Purani tfvars mein t3.* ho to badal |
+| `CreateOpenIDConnectProvider ... EntityAlreadyExists` | GitHub OIDC provider pehle se (Project 1/2) | tfvars `create_github_oidc_provider = false` |
 | `terraform apply`: `data.http ... 404` | `alb_controller_version` galat tag | GitHub releases se exact tag |
 
 ---

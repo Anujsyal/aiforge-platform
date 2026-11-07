@@ -10,7 +10,7 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    repoURL: https://github.com/Anujsyal/aiforge-platform.git
     targetRevision: main
     path: gitops/platform-config/kyverno-policies
   destination:
@@ -30,7 +30,7 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    repoURL: https://github.com/Anujsyal/aiforge-platform.git
     targetRevision: main
     path: gitops/platform-config/secrets
   destination:
@@ -54,7 +54,7 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    repoURL: https://github.com/Anujsyal/aiforge-platform.git
     targetRevision: main
     path: gitops/platform-config/crossplane
   destination:
@@ -78,7 +78,7 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    repoURL: https://github.com/Anujsyal/aiforge-platform.git
     targetRevision: main
     path: gitops/platform-config/network-policies
   destination:
@@ -97,7 +97,7 @@ metadata:
 spec:
   project: platform
   source:
-    repoURL: https://github.com/<GITHUB_USER>/aiforge-platform.git
+    repoURL: https://github.com/Anujsyal/aiforge-platform.git
     targetRevision: main
     path: gitops/platform-config/monitoring
   destination:

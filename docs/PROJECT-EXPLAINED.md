@@ -270,7 +270,7 @@ Guardrails: Infracost (PR pe "+$X/month") · AWS Budgets (account + Project tag)
 | 13 | Argo CD permanent OutOfSync agar Kyverno digest mutate kare | Kyverno `mutateDigest` Deployment template badalta → Git se drift | CI digest likhta hai, chart `repo:tag@digest`, policy `mutateDigest: false`, `verifyDigest: true` | Design |
 | 14 | Monorepo mein CI ka commit CI dobara trigger kare (loop) | — | `GITHUB_TOKEN` se push naye workflow runs trigger nahi karta; workflow `paths` filter | Design |
 | 15 | Kyverno default-deny pehle se bane namespace mein nahi bana | Generate rules sirf naye admission events pe | `generateExisting: true` | Code review |
-| 16 | Git Bash mein `BASE_PATH=/apps/x` → `C:/Program Files/Git/apps/x` | MSYS path conversion | `MSYS_NO_PATHCONV=1` | **Asli** (local smoke test mein hua) |
+| 16 | Git Bash mein `BASE_PATH=/apps/x` → `C:/Program Files/Git/apps/x`; Phase 2 mein `aws ssm get-parameter --name /aiforge/k3s/kubeconfig` → `ParameterNotFound` (jabki server log mein upload successful tha) | MSYS path conversion: leading `/` wale args aur env vars Windows path ban jaate hain | Sirf us command pe `MSYS_NO_PATHCONV=1`. Global export galat: `KUBECONFIG` bhi convert hona band ho jaata hai. Debug: SSM `send-command` se server ka bootstrap log padha → upload `Version 1` dikha → problem client side | **Asli** (local test + Phase 2, 2026-11-08) |
 | 17 | Vault restart ke baad saare ExternalSecrets fail | Vault sealed start hota hai | `scripts/vault-unseal.sh`; production: KMS auto-unseal | Design |
 | 18 | "api.openai.com block karo" NetworkPolicy se nahi hota | Standard NetworkPolicy FQDN nahi samajhti | Default-deny egress + sirf internal allow; FQDN chahiye to Cilium `toFQDNs` | Design |
 | 19 | Phase order: LiteLLM ko secrets chahiye par Vault Phase 6 mein | Chicken-egg | Pehle manual `kubectl create secret`, Phase 6 mein delete → ESO | Guide design |
@@ -281,6 +281,8 @@ Guardrails: Infracost (PR pe "+$X/month") · AWS Budgets (account + Project tag)
 | 24 | NACL lagate hi apt/docker pull timeout | NACL stateless: return traffic ke ephemeral ports | Inbound TCP/UDP 1024-65535 | Classic (Project 2 bhi) |
 | 25 | Chart versions purane / RC | Kyverno 3.10 RC tha; ALB controller v3 aa chuka; Langfuse chart 2.x | Artifact Hub se latest **stable** pin; `scripts/check-chart-versions.sh` | Research (Nov 2026) |
 | 26 | Vault seed script dobara chalane pe master key badal jaati | Script har baar random overwrite karta | Existing path skip, `FORCE=1` se hi overwrite | Code review |
+| 27 | `terraform apply`: `instance type is not eligible for Free Tier` | Account AWS **Free plan** pe: sirf free-tier-eligible types (t3.large/xlarge nahi) | Sab nodes `m7i-flex.large` (2 vCPU, 8 GB), 1 server + 3 agents; Ollama requests 1 CPU / 3 Gi | **Asli** (Phase 2, 2026-11-08) |
+| 28 | `CreateOpenIDConnectProvider: EntityAlreadyExists` | GitHub OIDC provider account-wide ek hi hota hai, Project 1/2 ne bana diya tha | `create_github_oidc_provider = false` (module `data` source se existing provider use karta hai) | **Asli** (Phase 2, 2026-11-08) |
 
 **Build ke baad yahan add kar:** asli error, kitna time laga, kaise debug kiya (kaunsi command se pata chala). Interview mein STAR format: Situation → Task → Action → Result.
 
