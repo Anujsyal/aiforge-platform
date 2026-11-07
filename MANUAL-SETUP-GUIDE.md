@@ -150,6 +150,12 @@ Order wahi hai jo spec mein tha: **VPC → cluster → Ollama + LiteLLM → RAG 
 ### 1.2 Billing alarm pehle
 Project 1 wala rule: kuch bhi banane se pehle **Billing → Budgets** mein ek $10 alert (Terraform baad mein proper budgets banayega). **Billing → Cost allocation tags** mein `Project` tag ko **Activate** kar (24h lagte hain, isliye pehle hi).
 
+Check (2026-11-08): `Project` tag is account mein pehle se **Active** hai (Project 1 ke time se). `Team`, `Owner` aur `Environment` bhi Active hain. CLI se dekhne ke liye:
+```bash
+aws ce list-cost-allocation-tags --type UserDefined --region us-east-1 --output table
+```
+Terraform `CostCenter` tag bhi lagata hai. Resources banne ke baad wo is list mein dikhega, tab chahe to usko bhi Activate kar sakta hai (optional).
+
 ### 1.3 Laptop tools (Windows, Git Bash)
 
 | Tool | Install | Check |
@@ -210,9 +216,127 @@ Placeholders (`<GITHUB_USER>`, `<ACCOUNT_ID>`, `<VPC_ID>`, `<ADMIN_CIDR>`) VPC b
 
 ## Phase 1: VPC (networking)
 
-**Kya banega:** 2 AZ, 2 public + 2 private subnets, IGW, 1 NAT, route tables, NACLs, S3 gateway endpoint, ECR interface endpoints, Flow Logs.
+**Kya banega:** 2 AZ, 2 public + 2 private subnets, IGW, 1 NAT, route tables, NACLs, S3 gateway endpoint, ECR interface endpoints, Flow Logs. **Koi EC2/cluster nahi** (wo Phase 2 mein).
 
-### 1A. Manual (Console) — ek baar seekhne ke liye
+### VPC structure: kaisa dikhta hai
+
+```
+                                   INTERNET
+                                      │
+                           ┌──────────┴──────────┐
+                           │  Internet Gateway   │  aiforge-igw
+                           └──────────┬──────────┘
+┌──────────────────────── VPC aiforge-vpc  10.20.0.0/16  (ap-south-1) ────────────────────────┐
+│                                     │                                                       │
+│   Public route table (aiforge-public-rt):  10.20.0.0/16 → local  ·  0.0.0.0/0 → IGW         │
+│                                     │                                                       │
+│  ┌─────── AZ ap-south-1a ─────────────────────┐  ┌─────── AZ ap-south-1b ────────────────┐  │
+│  │ PUBLIC  aiforge-public-ap-south-1a         │  │ PUBLIC  aiforge-public-ap-south-1b    │  │
+│  │ 10.20.0.0/24        NACL: public-nacl      │  │ 10.20.1.0/24       NACL: public-nacl  │  │
+│  │  ┌──────────────┐   ┌──────────────────┐   │  │  ┌──────────────────┐                 │  │
+│  │  │ NAT Gateway  │   │ ALB (Phase 4,    │   │  │  │ ALB node (ALB ko │                 │  │
+│  │  │ + Elastic IP │   │ sirf tera IP)    │   │  │  │ 2 AZ chahiye)    │                 │  │
+│  │  └──────▲───────┘   └──────────────────┘   │  │  └──────────────────┘                 │  │
+│  └─────────┼──────────────────────────────────┘  └───────────────────────────────────────┘  │
+│            │                                                                                │
+│   Private route tables (aiforge-private-rt-*):  10.20.0.0/16 → local  ·  0.0.0.0/0 → NAT    │
+│                                                 S3 prefix list → S3 gateway endpoint        │
+│            │                                                                                │
+│  ┌─────────┼──── AZ ap-south-1a ───────────────┐  ┌─────── AZ ap-south-1b ────────────────┐  │
+│  │ PRIVATE  aiforge-private-ap-south-1a        │  │ PRIVATE  aiforge-private-ap-south-1b  │  │
+│  │ 10.20.10.0/24       NACL: private-nacl      │  │ 10.20.11.0/24      NACL: private-nacl │  │
+│  │   k3s server 10.20.10.10   (Phase 2)        │  │   k3s agent         (Phase 2)         │  │
+│  │   k3s agent                (Phase 2)        │  │                                       │  │
+│  │   [ENI] ecr.api + ecr.dkr endpoints         │  │   [ENI] ecr.api + ecr.dkr endpoints   │  │
+│  └─────────────────────────────────────────────┘  └───────────────────────────────────────┘  │
+│                                                                                             │
+│   S3 gateway endpoint (route table entry, free)     Flow Logs (REJECT) → CloudWatch         │
+│                                                     /aiforge/vpc-flow-logs (7 din)          │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**CIDR plan:** `cidrsubnet("10.20.0.0/16", 8, n)` /16 range ko /24 ke tukdon mein kaatta hai.
+
+| Subnet | n | CIDR | Usable IPs (AWS 5 reserve karta hai) | Kaun rahega |
+|---|---|---|---|---|
+| aiforge-public-ap-south-1a | 0 | 10.20.0.0/24 | 251 | NAT, ALB |
+| aiforge-public-ap-south-1b | 1 | 10.20.1.0/24 | 251 | ALB (2nd AZ) |
+| aiforge-private-ap-south-1a | 10 | 10.20.10.0/24 | 251 | k3s server (fixed `.10`), agent, endpoint ENI |
+| aiforge-private-ap-south-1b | 11 | 10.20.11.0/24 | 251 | k3s agent, endpoint ENI |
+
+`10.20.2.0` se `10.20.9.0` tak, aur `10.20.12.0` ke baad wale ranges khaali hain. Wo future subnets ke liye hain (jaise DB subnets ya teesri AZ).
+
+**Traffic ke 3 raaste** (Phase 2 ke baad):
+
+```
+1. Bahar se andar (user → app):
+   Internet → IGW → ALB (public subnet, SG: sirf tera IP) → NodePort → node (private subnet)
+
+2. Andar se bahar (node → internet: apt, docker pull, ollama models):
+   Node (private) → private RT 0.0.0.0/0 → NAT (public subnet) → IGW → Internet
+   Internet se koi NAYA connection private node tak nahi aa sakta (NAT sirf outbound hai)
+
+3. Node → ECR image pull (internet ke bina):
+   Node → ecr.api / ecr.dkr interface endpoint (private DNS, ENI :443) → auth token + manifest
+        → image layers S3 mein hain → S3 gateway endpoint (route table entry) → S3
+```
+
+**Subnet tags kyun:**
+- Public subnets pe `kubernetes.io/role/elb = 1` hai.
+- Private subnets pe `kubernetes.io/role/internal-elb = 1` hai.
+- Dono pe `kubernetes.io/cluster/aiforge = shared` hai.
+
+Phase 2 ka ALB controller inhi tags se decide karta hai ki ALB kis subnet mein banana hai.
+
+### `terraform apply -target=module.vpc` kya banata hai (~25 resources)
+
+Code: [terraform/modules/vpc/main.tf](terraform/modules/vpc/main.tf)
+
+| # | Resource | Kitne | Kaam |
+|---|---|---|---|
+| 1 | VPC (10.20.0.0/16, DNS hostnames on) | 1 | Private network |
+| 2 | Public subnets | 2 | ALB + NAT |
+| 3 | Private subnets | 2 | k3s nodes (koi public IP nahi) |
+| 4 | Internet Gateway | 1 | Public subnets ka internet |
+| 5 | Elastic IP + NAT Gateway | 1 + 1 | Private subnets ka sirf outbound internet |
+| 6 | Route tables + associations | 3 + 4 | Public → IGW; private → NAT (har private AZ ka apna RT) |
+| 7 | Network ACLs | 2 | Subnet level stateless firewall |
+| 8 | S3 gateway endpoint | 1 | S3 traffic AWS ke andar (free) |
+| 9 | ECR interface endpoints (`ecr.api`, `ecr.dkr`) + SG (443 from VPC) | 2 + 1 | Image pull bina NAT |
+| 10 | Flow logs: log group, IAM role, role policy, flow log | 4 | REJECT traffic ka log |
+
+**NACL rules:**
+
+| NACL | Direction | Rule | Kyun |
+|---|---|---|---|
+| public | in | 100 TCP 80, 110 TCP 443 from 0.0.0.0/0 | ALB listeners (asli IP filter ALB ke SG mein) |
+| public | in | 120 ALL from 10.20.0.0/16 | Private subnets ka traffic NAT tak |
+| public | in | 130 TCP / 140 UDP 1024-65535 from 0.0.0.0/0 | Internet se replies (NACL stateless hai) |
+| private | in | 100 ALL from 10.20.0.0/16 | VPC ke andar sab |
+| private | in | 110 TCP / 120 UDP 1024-65535 from 0.0.0.0/0 | NAT ke through gaye requests ke replies |
+| dono | out | 100 ALL | Bahar jaane do (SG + NetworkPolicy aage control karte hain) |
+
+**SG vs NACL (interview):**
+
+| | Security Group | NACL |
+|---|---|---|
+| Kahan lagta hai | ENI level | Subnet level |
+| State | Stateful: reply khud allowed | Stateless: reply ke ephemeral ports khud kholne padte hain |
+| Rules | Sirf allow | Allow + deny |
+
+**Kharcha (sirf Phase 1, jab tak chalta rahe):**
+
+| Cheez | ~$/hr |
+|---|---|
+| NAT Gateway | 0.056 (+ $0.056/GB data) |
+| Public IPv4 (NAT ka EIP) | 0.005 |
+| ECR interface endpoints (2 × 2 AZ) | 0.044 |
+| VPC, subnets, IGW, routes, NACL, S3 endpoint | free |
+| **Total** | **~$0.10/hr (~₹9/hr, ~$2.5/din)** |
+
+Paisa bachana ho to `terraform.tfvars` mein `interface_endpoints = []` kar de (~$0.06/hr). Endpoints Phase 2 ke baad kaam aate hain, tab wapas `["ecr.api", "ecr.dkr"]` kar dena.
+
+### 1A. Manual (Console): ek baar seekhne ke liye
 
 1. **VPC → Your VPCs → Create VPC → "VPC only"**: Name `aiforge-vpc`, CIDR `10.20.0.0/16`. Create ke baad **Actions → Edit VPC settings → Enable DNS hostnames ✔** (interface endpoints ke private DNS ke liye zaruri).
 2. **Subnets → Create** (4):
@@ -224,51 +348,121 @@ Placeholders (`<GITHUB_USER>`, `<ACCOUNT_ID>`, `<VPC_ID>`, `<ADMIN_CIDR>`) VPC b
    | aiforge-private-a | ap-south-1a | 10.20.10.0/24 |
    | aiforge-private-b | ap-south-1b | 10.20.11.0/24 |
 
-   Public subnets pe tags: `kubernetes.io/role/elb = 1`, `kubernetes.io/cluster/aiforge = shared` (ALB controller inhi tags se subnet dhoondhta hai).
+   Public subnets pe tags: `kubernetes.io/role/elb = 1`, `kubernetes.io/cluster/aiforge = shared`.
 3. **Internet Gateway → Create** `aiforge-igw` → **Attach to VPC**.
-4. **NAT Gateway → Create**: subnet `aiforge-public-a`, connectivity **Public**, **Allocate Elastic IP**. (Ye paise wala hai: ~$1.3/din.)
+4. **NAT Gateway → Create**: subnet `aiforge-public-a`, connectivity **Public**, **Allocate Elastic IP**. Ye paise wala hai (~$1.3/din).
 5. **Route tables:**
    - `aiforge-public-rt`: route `0.0.0.0/0 → igw`; subnet associations: dono public.
    - `aiforge-private-rt`: route `0.0.0.0/0 → nat`; associations: dono private.
-6. **Network ACLs** (stateless! return traffic ke liye ephemeral ports khud kholne padte hain):
-   - Public NACL inbound: 100 TCP 80 `0.0.0.0/0` · 110 TCP 443 · 120 ALL `10.20.0.0/16` · 130 TCP 1024-65535 `0.0.0.0/0` · 140 UDP 1024-65535. Outbound: 100 ALL.
-   - Private NACL inbound: 100 ALL `10.20.0.0/16` · 110 TCP 1024-65535 `0.0.0.0/0` · 120 UDP 1024-65535. Outbound: 100 ALL.
-7. **Endpoints → Create**: `com.amazonaws.ap-south-1.s3` type **Gateway**, route table `aiforge-private-rt` (free). Optional interface: `ecr.api`, `ecr.dkr` (private subnets, SG: 443 from 10.20.0.0/16).
-8. **Flow logs:** VPC → Actions → Create flow log → Filter **Reject**, destination CloudWatch log group `/aiforge/vpc-flow-logs`, IAM role (console "create new role" option).
+6. **Network ACLs:** upar wali NACL table ke rules. NACL stateless hai, isliye ephemeral ports zaruri hain.
+7. **Endpoints → Create**: `com.amazonaws.ap-south-1.s3`, type **Gateway**, route table `aiforge-private-rt` (free). Optional interface endpoints: `ecr.api`, `ecr.dkr` (private subnets, SG: 443 from 10.20.0.0/16).
+8. **Flow logs:** VPC → Actions → Create flow log → Filter **Reject** → destination CloudWatch log group `/aiforge/vpc-flow-logs` → IAM role (console ka "create new role" option).
 
-Samajh aaya? Ab **sab delete kar** (NAT + EIP pehle, phir endpoints, phir VPC) aur 1B se bana. Dono mein same cheez banti hai.
+Samajh aa gaya to ab **sab delete kar**: pehle NAT + EIP, phir endpoints, phir VPC. Phir 1B se bana; dono tareekon se same cheez banti hai. Bas Terraform subnets ke naam thode alag rakhta hai (`aiforge-public-ap-south-1a`).
 
 ### 1B. Code (Terraform)
 
+**Directory:** saari commands Git Bash mein chala. Path mein space hai, isliye quotes laga: `cd "/e/Project 3/..."`.
+
+**Step 1: State bucket (ek baar)**
 ```bash
-# 1. State bucket (ek baar; local state)
-cd terraform/bootstrap
-terraform init && terraform apply           # output: state_bucket
-
-# 2. Platform stack config
-cd ../stacks/platform
-cp backend.hcl.example backend.hcl          # bucket = upar wala output
-cp terraform.tfvars.example terraform.tfvars  # github_repo, alert_emails bhar
-terraform init -backend-config=backend.hcl
-
-# 3. Sirf VPC (phase by phase seekhne ke liye -target)
-terraform apply -target=module.vpc
+cd "/e/Project 3/terraform/bootstrap"
+terraform init
+terraform apply          # "yes" → output: state_bucket = "aiforge-tfstate-<account-id>"
 ```
-`-target` sirf learning ke liye; normal mein poora `terraform apply`.
+Bootstrap ka state local file `terraform/bootstrap/terraform.tfstate` mein rehta hai. Wajah anda-murgi wali hai: bucket abhi bana hi nahi, to state usme kaise rakhe. Ye file `.gitignore` mein hai.
 
-**Code mein dekh:** [terraform/modules/vpc/main.tf](terraform/modules/vpc/main.tf): `cidrsubnet()` se subnets, `single_nat_gateway`, NACL rules, `aws_vpc_endpoint`, `aws_flow_log` (traffic_type `REJECT`).
-
-### ✅ Check
+**Step 2: Config files**
 ```bash
-terraform output vpc_id nat_public_ips
-aws ec2 describe-subnets --filters Name=vpc-id,Values=$(terraform output -raw vpc_id) \
+cd "/e/Project 3/terraform/stacks/platform"
+cp backend.hcl.example backend.hcl
+cp terraform.tfvars.example terraform.tfvars
+```
+`backend.hcl` mein sirf bucket wali line badal:
+```hcl
+bucket       = "aiforge-tfstate-<account-id>"   # Step 1 ka output
+key          = "platform/terraform.tfstate"
+region       = "ap-south-1"
+encrypt      = true
+use_lockfile = true                              # S3 native locking (DynamoDB nahi chahiye)
+```
+`terraform.tfvars` mein ye 2 lines badal:
+```hcl
+github_repo  = "<GitHubUser>/aiforge-platform"   # case exact rakh (GitHub OIDC trust)
+alert_emails = ["<tera-email>"]
+```
+Check kar ki GitHub OIDC provider pehle se hai ya nahi (Project 1/2 se):
+```bash
+aws iam list-open-id-connect-providers
+# token.actions.githubusercontent.com dikhe → tfvars mein create_github_oidc_provider = false
+```
+Dono files `.gitignore` mein hain, commit nahi hoti.
+
+**Step 3: Init + sirf VPC**
+```bash
+terraform init -backend-config=backend.hcl   # "Terraform has been successfully initialized!"
+terraform apply -target=module.vpc           # plan dekh (~25 to add) → "yes"
+```
+- `-target` sirf phase-by-phase seekhne ke liye hai. "Resource targeting is in effect" wali warning normal hai. Phase 2 mein poora `terraform apply` chalega.
+- NAT Gateway banne mein ~2 min lagte hain.
+
+**Code mein dekh:** `cidrsubnet()` se subnets, `single_nat_gateway`, NACL rules, `aws_vpc_endpoint`, aur `aws_flow_log` (`traffic_type = "REJECT"`).
+
+### ✅ Check (same folder: `terraform/stacks/platform`)
+```bash
+VPC=$(terraform output -raw vpc_id); echo $VPC
+
+# 1. Subnets: 4 (2 public, 2 private, 1a + 1b)
+aws ec2 describe-subnets --filters Name=vpc-id,Values=$VPC \
   --query 'Subnets[].[Tags[?Key==`Name`]|[0].Value,CidrBlock,AvailabilityZone]' --output table
-aws logs describe-log-groups --log-group-name-prefix /aiforge/vpc-flow-logs
+
+# 2. NAT Gateway: State "available" + public IP
+aws ec2 describe-nat-gateways --filter Name=vpc-id,Values=$VPC \
+  --query 'NatGateways[].[NatGatewayId,State,NatGatewayAddresses[0].PublicIp]' --output table
+
+# 3. Route tables: public → igw-..., private → nat-...
+aws ec2 describe-route-tables --filters Name=vpc-id,Values=$VPC \
+  --query 'RouteTables[].[Tags[?Key==`Name`]|[0].Value,Routes[?DestinationCidrBlock==`0.0.0.0/0`]|[0].[GatewayId,NatGatewayId]]' --output text
+
+# 4. Endpoints: s3 Gateway + ecr.api / ecr.dkr Interface, State "available"
+aws ec2 describe-vpc-endpoints --filters Name=vpc-id,Values=$VPC \
+  --query 'VpcEndpoints[].[ServiceName,VpcEndpointType,State]' --output table
+
+# 5. Flow log: ACTIVE, REJECT
+aws ec2 describe-flow-logs --filter Name=resource-id,Values=$VPC \
+  --query 'FlowLogs[].[FlowLogId,FlowLogStatus,TrafficType]' --output table
 ```
+
+**Asli run (2026-11-08) ka subnets output:**
+```
+|  aiforge-public-ap-south-1b  |  10.20.1.0/24   |  ap-south-1b |
+|  aiforge-private-ap-south-1a |  10.20.10.0/24  |  ap-south-1a |
+|  aiforge-private-ap-south-1b |  10.20.11.0/24  |  ap-south-1b |
+|  aiforge-public-ap-south-1a  |  10.20.0.0/24   |  ap-south-1a |
+```
+Is run ka VPC ID `vpc-090f7e7572c0ceb89` tha. Destroy + apply karne pe naya ID milega.
+
 ### 📤 Push
 ```bash
-git commit -am "phase 1: VPC" --allow-empty && git push
+cd "/e/Project 3"
+# Lock files: Windows + Linux dono ke hashes (CI Linux pe chalta hai; Project 2 ka lesson)
+terraform -chdir=terraform/bootstrap providers lock -platform=windows_amd64 -platform=linux_amd64
+terraform -chdir=terraform/stacks/platform providers lock -platform=windows_amd64 -platform=linux_amd64
+git status          # terraform.tfvars / backend.hcl / *.tfstate list mein NAHI hone chahiye
+git add -A
+git commit -m "phase 1: VPC" && git push
 ```
+
+### Aaj aage nahi karna?
+NAT ka paisa bachane ke liye folder `terraform/stacks/platform` mein:
+```bash
+terraform destroy -target=module.vpc
+```
+Agle din `terraform apply -target=module.vpc` se ~3 min mein wapas ban jaayega.
+
+### Phase 2 se pehle (tools)
+- Helm: `winget install Helm.Helm` → check: `helm version`
+- Session Manager plugin: MSI se install (section 1.3) → check: `session-manager-plugin`
 
 ---
 
