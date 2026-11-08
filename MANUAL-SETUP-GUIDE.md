@@ -1156,7 +1156,7 @@ kubectl -n ai-gateway get deploy litellm -w      # ~10s mein wapas 1 (selfHeal)
 | CI: ECR push `not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy repo/branch mismatch | `github_repo` tfvars exact `owner/repo` (case-sensitive); sirf main branch allowed |
 | CI: cosign `getting signer: ... id-token` | `permissions: id-token: write` missing | Workflow job permissions |
 | CI release commit `rejected (non-fast-forward)` | Beech mein push | Script `pull --rebase` 3 baar karta hai; dobara run |
-| Argo app sync fail: `failed to discover server resources for group version monitoring.coreos.com/v1` (Qdrant, asli run) | Chart ServiceMonitor banata hai par Prometheus CRDs (Phase 7) abhi nahi | Phase 7 tak `serviceMonitor.enabled: false`; Phase 7 ke baad true |
+| Argo app sync fail: `failed to discover server resources for group version monitoring.coreos.com/v1` (Qdrant, asli run) | Chart ServiceMonitor banata hai par Prometheus CRDs (Phase 7) abhi nahi | Phase 7 tak `serviceMonitor.enabled: false`; Phase 7 ke baad true. Fix push karne ke baad bhi same error = purana operation retry ho raha → `kubectl -n argocd delete app qdrant && kubectl apply -f gitops/platform/30-ai.yaml` (ya UI → Terminate → Sync) |
 | Argo app `OutOfSync` loop on Kyverno CRDs | Empty labels/annotations (Project 2) | `ignoreDifferences` already |
 | Argo: `Application referencing project ai-apps which does not exist` | 00-projects pehle apply nahi | `kubectl apply -f gitops/platform/00-projects.yaml` |
 | Argo: `namespace X is not permitted in project ai-apps` | App ka naam platform namespace jaisa | Alag naam rakh |
