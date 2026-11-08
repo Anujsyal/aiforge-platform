@@ -1,6 +1,6 @@
 # AIForge: Project kaise kaam karta hai (Understanding + Interview Prep)
 
-Setup steps ke liye: [MANUAL-SETUP-GUIDE.md](../MANUAL-SETUP-GUIDE.md). Ye doc batata hai **kya bana hai, kyun bana hai, har tool kisse juda hai**, interview mein kya puchha jaayega, aur kaun si problems aati hain.
+Setup steps ke liye: [MANUAL-SETUP-GUIDE.md](../MANUAL-SETUP-GUIDE.md). Asli build ki diary (order, real IDs, har error): [BUILD-JOURNEY.md](BUILD-JOURNEY.md). Ye doc batata hai **kya bana hai, kyun bana hai, har tool kisse juda hai**, interview mein kya puchha jaayega, aur kaun si problems aati hain.
 
 ---
 
@@ -251,7 +251,7 @@ Guardrails: Infracost (PR pe "+$X/month") · AWS Budgets (account + Project tag)
 
 ## 8. Problems faced (aur fix)
 
-> **Ye section imaandari se padh.** Neeche ki zyadatar problems code likhte waqt research/design mein pakdi gayi aur code mein pehle se handle hain (comments mein "Problems faced #N" likha hai). Abhi tak AWS pe kuch run nahi hua, isliye interview mein sirf wahi problems "maine face ki" bolna jo build karte waqt tujhe sach mein aayi. Build ke baad har problem ke aage apna asli error message / time / screenshot daal de. Isse story real banegi.
+> **Ye section imaandari se padh.** "Kahan pakdi" column mein **Asli** = build karte waqt sach mein aayi (date ke saath). Baaki (Design/Research/Code review) code likhte waqt pehle se handle ki gayi. Interview mein "maine face ki" sirf **Asli** wali bolna. Phase-wise poori kahani: [BUILD-JOURNEY.md](BUILD-JOURNEY.md).
 
 | # | Problem | Root cause | Fix (code mein) | Kahan pakdi |
 |---|---|---|---|---|
@@ -288,6 +288,18 @@ Guardrails: Infracost (PR pe "+$X/month") · AWS Budgets (account + Project tag)
 | 31 | `pytest`: `ModuleNotFoundError: No module named 'app'` | Plain `pytest` rootdir ko `sys.path` mein nahi daalta (`python -m pytest` daalta hai, isliye dev machine pe pass hua). CI mein bhi yahi fail hota | `apps/rag-app/pytest.ini`: `pythonpath = .` | **Asli** (Phase 4, 2026-11-08) |
 | 32 | Pods `ImagePullBackOff`: `failed to pull ... ECR ... authorization failed: no basic auth credentials` | EKS pe kubelet ke saath `ecr-credential-provider` aata hai; **k3s pe nahi**. Node IAM role pe ECR read permission thi, par containerd ko token dene wala koi nahi tha | AWS ka `ecr-credential-provider` (v1.37.0) `/var/lib/rancher/credentialprovider/` mein + `CredentialProviderConfig` + k3s restart. Chalte nodes pe `scripts/install-ecr-credential-provider.sh` (SSM Run Command), naye nodes ke liye user-data. Saath mein `lifecycle { ignore_changes = [user_data] }`, warna template badalte hi Terraform saare nodes replace kar deta | **Asli** (Phase 4, 2026-11-09) |
 | 33 | RAG app har sawaal pe "I don't know" (over-refusal), jabki retrieval sahi document laa raha tha | System prompt bahut sakht/lamba ("ONLY", "reply exactly", lambi "never follow" list); 1B model ke liye refusal sabse aasaan raasta | 3 prompt variants seedha LiteLLM pe same context ke saath compare kiye: purana 1/5, simple numbered rules 4/5, question-first 3/5 (Canberra hallucinate kiya). V3 ("match by meaning") rakha. Budget wala 1 case ab bhi fail = model limit; eval gate 80% threshold isi liye. Red-team ke leak-check phrases naye prompt se update | **Asli** (Phase 4, 2026-11-09) |
+| 34 | Phase 1: `terraform.tfvars` → `Duplicate attribute` | Same key (`create_github_oidc_provider`) do baar | Ek line hatai | **Asli** (Phase 2, 2026-11-08) |
+| 35 | Argo CD Helm install: `504 Gateway Time-out` github.com releases se; phir `namespaces "argocd" not found` | GitHub release CDN slow; pehla install fail hua to namespace bana hi nahi | Same chart OCI registry se: `oci://ghcr.io/argoproj/argo-helm/argo-cd --version 10.14.0 --create-namespace` | **Asli** (Phase 2, 2026-11-08) |
+| 36 | Git Bash: `no available terminals` | Laptop free RAM 0.75 GB (Docker + browser + VS Code) | Uninstall/reinstall bekaar → reboot | **Asli** (Phase 2, 2026-11-08) |
+| 37 | `kubectl` → `localhost:8080 refused` | Naye terminal mein `KUBECONFIG` nahi (kubectl ka default 8080) | `~/.bashrc` mein export | **Asli** (Phase 3, 2026-11-08) |
+| 38 | LiteLLM `401 Malformed API Key` | `$MK` naye terminal mein khaali | MK Secret `litellm-secrets` se padha, kabhi print nahi | **Asli** (Phase 3, 2026-11-08) |
+| 39 | `team/new` → `KeyError`, bash syntax error, `Method Not Allowed` | Lamba multi-line paste toota (`` char, lines gaayab) | Idempotent script `scripts/phase4-team-secret.sh` | **Asli** (Phase 4, 2026-11-09) |
+| 40 | Python `FileNotFoundError: /tmp/...` | Windows Python Git Bash ke `/tmp` ko nahi jaanta | stdin pipe | **Asli** (Phase 4, 2026-11-09) |
+| 41 | LiteLLM key bani par `team_id: None` | Khaali team_id ke saath generate | Script same-alias purani keys delete karke sahi team ke saath banata hai | **Asli** (Phase 4, 2026-11-09) |
+| 42 | `docker push` → tag immutable | `manual-1` dobara push; ECR immutable tags | Har build naya tag (`manual-2`) | **Asli** (Phase 4, 2026-11-09) |
+| 43 | `logs job/team-alpha-rag-ingest` → not found; phir `invalid ingest token` | Job TTL ke baad delete; command mein `<ingest_token>` placeholder literal chipkaya | Ingest manually ALB se asli token ke saath | **Asli** (Phase 4, 2026-11-09) |
+| 44 | `json: Expecting value` (khaali response) | Rollout ke beech purana pod terminate ho raha tha | 30 sec baad retry; theek | **Asli** (Phase 4, 2026-11-09) |
+| 45 | Helm → ApplicationSet switch pe ALB DNS badal gaya | `helm uninstall` = Ingress delete = ALB delete | Normal; naya address `kubectl get ingress` se | **Asli** (Phase 4, 2026-11-09) |
 
 **Build ke baad yahan add kar:** asli error, kitna time laga, kaise debug kiya (kaunsi command se pata chala). Interview mein STAR format: Situation → Task → Action → Result.
 

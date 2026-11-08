@@ -10,7 +10,9 @@ Order wahi hai jo spec mein tha: **VPC → cluster → Ollama + LiteLLM → RAG 
 
 > Ye project kaise kaam karta hai, har tool kyun hai, interview questions aur problems: **[docs/PROJECT-EXPLAINED.md](docs/PROJECT-EXPLAINED.md)**.
 
-> ⚠️ **Honest note:** saara code likha gaya hai, aur jo laptop pe check ho sakta tha wo check hua: `terraform validate` (dono stacks), RAG app ke 7 unit tests, `helm lint`/`helm template`, saari YAML parse, `kubectl kustomize`. **AWS pe abhi tak kuch nahi chala, aur CI pipeline bhi kabhi run nahi hui.** Pehli baar chalane pe kuch first-run bugs aana normal hai. Error aaye to J (Troubleshooting) dekh, phir output ke saath puchh.
+> Asli build ki diary (kis order mein kya bana, kaun kisse juda, har error + fix, roz ke start/stop notes): **[docs/BUILD-JOURNEY.md](docs/BUILD-JOURNEY.md)**.
+
+> ⚠️ **Status (2026-11-09):** Phase 0-4 AWS pe chal chuke hain aur unke asli errors J (Troubleshooting) aur BUILD-JOURNEY mein likhe hain. Phase 5-10 ka code likha hai par abhi run nahi hua: wahan first-run bugs aana normal hai.
 
 ---
 
@@ -732,11 +734,11 @@ image:
 ```
 ```bash
 git commit -am "phase 4: team-alpha-rag via appset" && git push
-kubectl apply -f gitops/platform/50-portal-and-tenants.yaml     # backstage (abhi image nahi, ignore) + tenant-appsets
+python scripts/pick-apps.py gitops/platform/50-portal-and-tenants.yaml tenant-appsets | kubectl apply -f -   # sirf tenant-appsets (Backstage Phase 8 mein)
 kubectl -n argocd get applicationset rag-apps
 kubectl -n argocd get app team-alpha-rag                         # Synced/Healthy, PostSync ingest Job chala
 ```
-Backstage app abhi `ImagePullBackOff`/Degraded dikhega (image Phase 8 mein bani). Normal.
+> Asli run: image `manual-2` thi (prompt fix ke baad naya build), isliye values.yaml mein `tag: manual-2`. Helm uninstall ke baad ALB delete hota hai aur ApplicationSet naya ALB banata hai (naya DNS naam).
 
 ### ✅ Check + 📤 Push
 `/ask` ALB se answer + `sources` deta hai · push.

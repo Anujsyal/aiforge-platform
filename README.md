@@ -18,6 +18,7 @@ Cost: LiteLLM per-team spend · OpenCost per namespace · Infracost on PRs · AW
 ## Docs
 - **[MANUAL-SETUP-GUIDE.md](MANUAL-SETUP-GUIDE.md)**: phase-by-phase build (manual + code), troubleshooting, cleanup
 - **[docs/PROJECT-EXPLAINED.md](docs/PROJECT-EXPLAINED.md)**: how it works, tool connections, design trade-offs, problems, interview Q&A
+- **[docs/BUILD-JOURNEY.md](docs/BUILD-JOURNEY.md)**: the real build diary: order of work, how the pieces connect, every error hit and its fix, day-to-day operations
 
 ## Stack
 Terraform · AWS VPC/NAT/NACL/SG/VPC endpoints/Flow Logs/SSM/ECR/Budgets/SNS · k3s · AWS Load Balancer Controller · Ollama · LiteLLM · FastAPI · LangChain · Qdrant · Backstage · Crossplane v2 · Helm · Argo CD + ApplicationSets · GitHub Actions · promptfoo · RAGAS · Trivy · gitleaks · cosign · Kyverno · NetworkPolicies · Vault + External Secrets · Pod Security Admission · Langfuse · OpenTelemetry · Prometheus · Grafana · Loki + Alloy · OpenCost · Infracost
@@ -35,4 +36,4 @@ Terraform · AWS VPC/NAT/NACL/SG/VPC endpoints/Flow Logs/SSM/ECR/Budgets/SNS · 
 | `scripts/` | Kubeconfig/SSM tunnel, Vault init/seed, team onboarding, showback report |
 
 ## Status
-Code complete; verified locally with `terraform validate`, unit tests, `helm lint/template` and YAML/kustomize checks. Not yet deployed end to end.
+Phases 0-4 deployed on AWS (VPC, k3s, ALB controller, Argo CD, Ollama, LiteLLM, Qdrant, RAG app via ApplicationSet). Phases 5-10 (CI eval gate, security, observability, Backstage, cost) are written but not yet run.
