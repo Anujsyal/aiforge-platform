@@ -552,6 +552,9 @@ helm upgrade --install argocd argo/argo-cd -n argocd --create-namespace \
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
 kubectl -n argocd port-forward svc/argocd-server 8080:80      # http://localhost:8080  (admin)
 ```
+> `failed to fetch https://github.com/argoproj/argo-helm/releases/download/... : 504 Gateway Time-out` aaye (asli run, 2026-11-08) to wahi chart OCI se le:
+> `helm upgrade --install argocd oci://ghcr.io/argoproj/argo-helm/argo-cd -n argocd --create-namespace --version 10.14.0 -f gitops/bootstrap/argocd-values.yaml`
+
 Values mein `resource.customizations.health.argoproj.io_Application` hai: iske bina app-of-apps mein sync waves kaam nahi karti (Problems faced #4).
 
 **Ab ALB controller ko Argo CD ke hawale kar** (Helm release adopt ho jaayega, same naam):
@@ -1166,6 +1169,7 @@ kubectl -n ai-gateway get deploy litellm -w      # ~10s mein wapas 1 (selfHeal)
 | `terraform destroy` atak gaya: VPC dependency | ALB/SG controller ne banaye (Terraform ko nahi pata) | K: pehle Ingress delete |
 | `RunInstances ... InvalidParameterCombination: instance type is not eligible for Free Tier` | Free plan account (1.7) | `m7i-flex.large` (ab default). Purani tfvars mein t3.* ho to badal |
 | `CreateOpenIDConnectProvider ... EntityAlreadyExists` | GitHub OIDC provider pehle se (Project 1/2) | tfvars `create_github_oidc_provider = false` |
+| `helm install argocd`: `failed to fetch https://github.com/.../argo-cd-10.14.0.tgz : 504` | GitHub releases CDN temporary down | OCI se: `oci://ghcr.io/argoproj/argo-helm/argo-cd --version 10.14.0` (2F note) |
 | `terraform apply`: `data.http ... 404` | `alb_controller_version` galat tag | GitHub releases se exact tag |
 
 ---
