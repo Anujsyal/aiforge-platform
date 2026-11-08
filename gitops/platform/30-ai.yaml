@@ -65,7 +65,9 @@ spec:
           limits: { memory: 1Gi }
         metrics:
           serviceMonitor:
-            enabled: true
+            # ServiceMonitor CRD kube-prometheus-stack (Phase 7) lagata hai. Usse pehle true rakha to
+            # Argo sync fail: "could not find monitoring.coreos.com/v1" (asli run, 2026-11-08). Phase 7 mein true kar.
+            enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: vector-db

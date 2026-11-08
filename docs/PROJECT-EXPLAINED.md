@@ -283,6 +283,8 @@ Guardrails: Infracost (PR pe "+$X/month") · AWS Budgets (account + Project tag)
 | 26 | Vault seed script dobara chalane pe master key badal jaati | Script har baar random overwrite karta | Existing path skip, `FORCE=1` se hi overwrite | Code review |
 | 27 | `terraform apply`: `instance type is not eligible for Free Tier` | Account AWS **Free plan** pe: sirf free-tier-eligible types (t3.large/xlarge nahi) | Sab nodes `m7i-flex.large` (2 vCPU, 8 GB), 1 server + 3 agents; Ollama requests 1 CPU / 3 Gi | **Asli** (Phase 2, 2026-11-08) |
 | 28 | `CreateOpenIDConnectProvider: EntityAlreadyExists` | GitHub OIDC provider account-wide ek hi hota hai, Project 1/2 ne bana diya tha | `create_github_oidc_provider = false` (module `data` source se existing provider use karta hai) | **Asli** (Phase 2, 2026-11-08) |
+| 29 | Qdrant Argo app `OutOfSync/Missing`: `could not find monitoring.coreos.com/v1` | Chart ka ServiceMonitor Prometheus Operator ke CRD pe depend karta hai, jo baad ke phase mein aata hai (CRD ordering) | Pehle `serviceMonitor.enabled: false`, kube-prometheus-stack ke baad true. Production: CRDs pehle wave mein alag app se | **Asli** (Phase 3, 2026-11-08) |
+| 30 | Ollama/LiteLLM pe `TLS handshake timeout`, `connection refused :6443` | SSM port-forward ~20 min idle pe AWS band karta hai; plugin kabhi laptop pe khula reh jaata | `tunnel.sh`: keepalive (har 4 min curl) + auto-reconnect loop; Session Manager idle timeout 60 min | **Asli** (Phase 2-3, 2026-11-08) |
 
 **Build ke baad yahan add kar:** asli error, kitna time laga, kaise debug kiya (kaunsi command se pata chala). Interview mein STAR format: Situation → Task → Action → Result.
 

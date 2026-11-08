@@ -913,6 +913,7 @@ python scripts/pick-apps.py gitops/platform/40-observability.yaml otel-collector
 kubectl -n monitoring get pods; kubectl -n observability get pods
 ```
 `gitops/apps/team-alpha-rag/values.yaml` se `serviceMonitor` aur `otel` overrides hata → push.
+`gitops/platform/30-ai.yaml` mein Qdrant ka `metrics.serviceMonitor.enabled: true` kar → push → `kubectl apply -f gitops/platform/30-ai.yaml` (CRD ab hai).
 
 ### 7.2 Langfuse
 Langfuse keys Vault mein 6.1 mein daal chuka. Check:
@@ -1119,7 +1120,8 @@ kubectl -n ai-gateway get deploy litellm -w      # ~10s mein wapas 1 (selfHeal)
 |---|---|---|
 | `aws ssm start-session`: `SessionManagerPlugin is not found` | Plugin install nahi | 1.3 MSI install, naya terminal |
 | SSM: `TargetNotConnected` | SSM agent NAT tak nahi pahuncha / role nahi / boot chal raha | 3-4 min ruk; instance role `AmazonSSMManagedInstanceCore`; private route table `0.0.0.0/0 → nat` |
-| `kubectl`: `connection refused 127.0.0.1:6443` | Tunnel band | `./scripts/tunnel.sh` alag terminal |
+| `kubectl`: `connection refused 127.0.0.1:6443` | Tunnel band. SSM session ~20 min idle pe AWS band kar deta hai; laptop sleep/restart pe bhi (asli run) | `./scripts/tunnel.sh` alag terminal. Script ab auto-reconnect karti hai. Idle timeout badhana: Systems Manager → Session Manager → Preferences → Idle session timeout 60 min |
+| `kubectl`: `dial tcp [::1]:8080 ... refused` | Is window mein `KUBECONFIG` set nahi (kubectl default localhost:8080) | `echo 'export KUBECONFIG=~/.kube/aiforge.yaml' >> ~/.bashrc`, phir naya window ya `source ~/.bashrc` |
 | `get-kubeconfig.sh`: `ParameterNotFound` | Server bootstrap abhi khatam nahi / fail | SSM session → `sudo tail -100 /var/log/k3s-bootstrap.log` |
 | Bootstrap log: `snap ... aws-cli` error | snapd abhi ready nahi | `sudo snap wait system seed.loaded && sudo bash /var/lib/cloud/instance/scripts/part-001` |
 | Agent `NotReady` / join nahi | SG self-rule / server IP | `sudo journalctl -u k3s-agent -n 50`; SG `aiforge-k3s-nodes` self ALL |
@@ -1154,6 +1156,7 @@ kubectl -n ai-gateway get deploy litellm -w      # ~10s mein wapas 1 (selfHeal)
 | CI: ECR push `not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy repo/branch mismatch | `github_repo` tfvars exact `owner/repo` (case-sensitive); sirf main branch allowed |
 | CI: cosign `getting signer: ... id-token` | `permissions: id-token: write` missing | Workflow job permissions |
 | CI release commit `rejected (non-fast-forward)` | Beech mein push | Script `pull --rebase` 3 baar karta hai; dobara run |
+| Argo app sync fail: `failed to discover server resources for group version monitoring.coreos.com/v1` (Qdrant, asli run) | Chart ServiceMonitor banata hai par Prometheus CRDs (Phase 7) abhi nahi | Phase 7 tak `serviceMonitor.enabled: false`; Phase 7 ke baad true |
 | Argo app `OutOfSync` loop on Kyverno CRDs | Empty labels/annotations (Project 2) | `ignoreDifferences` already |
 | Argo: `Application referencing project ai-apps which does not exist` | 00-projects pehle apply nahi | `kubectl apply -f gitops/platform/00-projects.yaml` |
 | Argo: `namespace X is not permitted in project ai-apps` | App ka naam platform namespace jaisa | Alag naam rakh |
