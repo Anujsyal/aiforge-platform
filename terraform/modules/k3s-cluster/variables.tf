@@ -66,3 +66,9 @@ variable "agent_disk_gb" {
   type    = number
   default = 60 # models + images + local-path PVCs
 }
+
+variable "ecr_credential_provider_version" {
+  description = "kubernetes/cloud-provider-aws ka ecr-credential-provider (k8s minor se match). k3s pe ECR pull ke liye zaruri."
+  type        = string
+  default     = "v1.37.0"
+}

@@ -665,6 +665,7 @@ docker compose down
 Code padh: [app/rag.py](apps/rag-app/app/rag.py) (chunk → embed → Qdrant → prompt → LLM), [app/main.py](apps/rag-app/app/main.py) (routes, `BASE_PATH`), [app/telemetry.py](apps/rag-app/app/telemetry.py) (metrics + OTel).
 
 ### 4B. Image ECR pe (manual, Phase 5 mein CI karega)
+> **Ek baar:** k3s nodes ko ECR se pull karna sikhana padta hai (EKS mein built-in hai, k3s mein nahi). Purane nodes pe `./scripts/install-ecr-credential-provider.sh` chala. Naye `terraform apply` wale nodes mein user-data ye khud karta hai.
 ```bash
 REG=$(terraform -chdir=terraform/stacks/platform output -raw ecr_registry)
 aws ecr get-login-password | docker login --username AWS --password-stdin $REG
@@ -1133,6 +1134,7 @@ kubectl -n ai-gateway get deploy litellm -w      # ~10s mein wapas 1 (selfHeal)
 | ALB 502 / targets `unhealthy` | Healthcheck path / NodePort SG | Target group health reason; healthcheck `/apps/<app>/healthz`; node SG pe controller ka rule (SG pe `kubernetes.io/cluster/aiforge` tag) |
 | ALB 504 after 60s | LLM CPU pe slow | Chart idle timeout 180s; `MAX_TOKENS` kam; qwen model |
 | Controller: `failed to get instance id ... providerID` | k3s node ka providerID set nahi | `kubectl get node -o yaml \| grep providerID` → `aws:///...` hona chahiye (user data `--kubelet-arg`) |
+| App pod `ImagePullBackOff`: `no basic auth credentials` (ECR image) | k3s mein ECR credential plugin nahi hota (asli run) | `./scripts/install-ecr-credential-provider.sh` → `kubectl -n <ns> delete pod --all`. Naye nodes (Terraform) mein user-data khud lagata hai |
 | Ollama `OOMKilled` | Memory limit | limit 8Gi; `OLLAMA_MAX_LOADED_MODELS=2` |
 | Ollama init `pull` fail | NAT/DNS | `kubectl -n ai-serving logs deploy/ollama -c pull-models` |
 | LiteLLM `CrashLoopBackOff`: prisma / DB | Postgres ready nahi / DATABASE_URL galat | `kubectl -n ai-gateway logs deploy/litellm`; secret ka `DATABASE_URL` host `litellm-postgres-0.litellm-postgres` |

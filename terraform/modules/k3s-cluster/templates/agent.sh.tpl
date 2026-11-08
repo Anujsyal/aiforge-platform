@@ -19,6 +19,23 @@ NODE_NAME=$(hostname -f)
 
 K3S_TOKEN=$(aws ssm get-parameter --region "$REGION" --name "${token_param}" --with-decryption --query Parameter.Value --output text)
 
+# --- ECR login plugin (k3s mein built-in nahi; EKS mein hota hai) ---
+# Iske bina: "failed to pull ... no basic auth credentials" (asli run, 2026-11-09)
+CP=/var/lib/rancher/credentialprovider
+mkdir -p $CP/bin
+curl -sfL -o $CP/bin/ecr-credential-provider   "https://artifacts.k8s.io/binaries/cloud-provider-aws/${ecr_cp_version}/linux/amd64/ecr-credential-provider-linux-amd64"
+chmod 755 $CP/bin/ecr-credential-provider
+cat > $CP/config.yaml <<'CFG'
+apiVersion: kubelet.config.k8s.io/v1
+kind: CredentialProviderConfig
+providers:
+  - name: ecr-credential-provider
+    matchImages:
+      - "*.dkr.ecr.*.amazonaws.com"
+    defaultCacheDuration: "12h"
+    apiVersion: credentialprovider.kubelet.k8s.io/v1
+CFG
+
 # Server ka API aane tak wait (server ~2-3 min leta hai)
 echo "Waiting for k3s server $SERVER_IP:6443 ..."
 until (echo > /dev/tcp/$SERVER_IP/6443) 2>/dev/null; do sleep 5; done

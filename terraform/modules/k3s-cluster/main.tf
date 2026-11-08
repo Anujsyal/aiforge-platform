@@ -162,6 +162,7 @@ resource "aws_instance" "server" {
     k3s_version      = var.k3s_version
     token_param      = local.token_param
     kubeconfig_param = local.kubeconfig_param
+    ecr_cp_version   = var.ecr_credential_provider_version
   })
   user_data_replace_on_change = true
 
@@ -176,6 +177,12 @@ resource "aws_instance" "server" {
     volume_size = var.server_disk_gb
     volume_type = "gp3"
     encrypted   = true
+  }
+
+  # User-data sirf PEHLE boot pe chalta hai. Template badalne pe Terraform instances REPLACE karta
+  # (= poora cluster delete). Isliye ignore: chalte nodes ko scripts/ se patch karo, naye nodes naya template lenge.
+  lifecycle {
+    ignore_changes = [user_data]
   }
 
   tags = {
@@ -197,11 +204,12 @@ resource "aws_instance" "agent" {
   iam_instance_profile   = aws_iam_instance_profile.nodes.name
 
   user_data = templatefile("${path.module}/templates/agent.sh.tpl", {
-    region      = var.region
-    k3s_version = var.k3s_version
-    token_param = local.token_param
-    server_ip   = local.server_ip
-    node_pool   = count.index == 0 ? "ai" : "general" # pehla agent Ollama ke liye
+    region         = var.region
+    k3s_version    = var.k3s_version
+    token_param    = local.token_param
+    server_ip      = local.server_ip
+    node_pool      = count.index == 0 ? "ai" : "general" # pehla agent Ollama ke liye
+    ecr_cp_version = var.ecr_credential_provider_version
   })
   user_data_replace_on_change = true
 
@@ -225,6 +233,12 @@ resource "aws_instance" "agent" {
     volume_size = var.agent_disk_gb
     volume_type = "gp3"
     encrypted   = true
+  }
+
+  # User-data sirf PEHLE boot pe chalta hai. Template badalne pe Terraform instances REPLACE karta
+  # (= poora cluster delete). Isliye ignore: chalte nodes ko scripts/ se patch karo, naye nodes naya template lenge.
+  lifecycle {
+    ignore_changes = [user_data]
   }
 
   tags = {
