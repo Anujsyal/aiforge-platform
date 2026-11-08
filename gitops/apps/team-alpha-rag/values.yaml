@@ -4,4 +4,15 @@ llm:
 vectorStore:
   size: small
   rawDocsBucket: false
+  create: false              # Phase 8 (Crossplane) mein hata
 replicas: 1
+
+# ---- Phase ke hisaab se temporary overrides ----
+image:
+  tag: manual-2              # Phase 5 ke baad hata (CI release file se tag + digest aayega)
+secrets:
+  useExternalSecret: false   # Phase 6 (Vault + ESO) mein hata
+serviceMonitor:
+  enabled: false             # Phase 7 (Prometheus) mein hata
+otel:
+  enabled: false             # Phase 7 (OTel collector) mein hata
