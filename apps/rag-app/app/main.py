@@ -101,6 +101,9 @@ def ask(req: AskRequest, p: RagPipeline = Depends(get_pipeline)):
     t.TOKENS.labels(type="completion").inc(ans.completion_tokens)
     if UNKNOWN_ANSWER.lower()[:12] in ans.answer.lower():
         t.UNANSWERED.inc()
+    for event in ans.guardrails:
+        t.GUARDRAIL.labels(event=event).inc()
+        log.warning("guardrail: %s", event)
 
     return AskResponse(
         answer=ans.answer,

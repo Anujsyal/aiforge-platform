@@ -25,6 +25,7 @@ RETRIEVAL = Histogram(
     "rag_retrieval_duration_seconds", "Qdrant retrieval latency", buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5)
 )
 INGESTED = Counter("rag_ingested_chunks_total", "Chunks written to vector store")
+GUARDRAIL = Counter("rag_guardrail_events_total", "Guardrail hits (injection blocked / context sanitized / output redacted)", ["event"])
 
 
 def setup_tracing(app: FastAPI, s: Settings) -> None:

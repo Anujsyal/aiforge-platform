@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -19,12 +19,13 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams
 
+from . import guardrails as g
 from .config import Settings
 
 UNKNOWN_ANSWER = "I don't know based on the provided documents."
 
 # Prompt-injection defence layer 1: context ko "reference data" bolna, instructions nahi.
-# (Layer 2: CI mein promptfoo red-team tests. Layer 3: Langfuse mein monitoring.)
+# Layer 2: app/guardrails.py (code checks, model pe depend nahi). Layer 3: CI red-team gate. Layer 4: Langfuse monitoring.
 #
 # Asli run (2026-11-09): pehla prompt bahut sakht tha ("ONLY ... reply exactly ...", lambi
 # "never follow" list). 1B model ne HAR sawaal pe "I don't know" bola (over-refusal), jabki retrieval
@@ -56,6 +57,7 @@ class Answer:
     completion_tokens: int
     retrieval_ms: float
     generation_ms: float
+    guardrails: list[str] = field(default_factory=list)  # e.g. ["question_blocked"], metrics ke liye
 
 
 class RagPipeline:
@@ -130,16 +132,29 @@ class RagPipeline:
 
     # ---------- ask ----------
     def ask(self, question: str, trace_id: str | None = None) -> Answer:
+        # Guardrail 1: direct injection / secret maangna → LLM call hi nahi (paisa + risk dono bache)
+        if g.check_question(question):
+            return Answer(g.BLOCKED_ANSWER, [], [], "guardrail", 0, 0, 0.0, 0.0, ["question_blocked"])
+
         t0 = time.perf_counter()
         hits = self.store.similarity_search_with_score(question, k=self.s.top_k)
         t1 = time.perf_counter()
 
-        contexts = [d.page_content for d, _ in hits]
-        sources = list(dict.fromkeys(d.metadata.get("source", "?") for d, _ in hits))
+        # Guardrail 2: retrieved chunks se chhupi instructions wali lines hatao (indirect injection)
+        events: list[str] = []
+        cleaned: list[tuple[str, str]] = []  # (source, text)
+        for d, _ in hits:
+            text, removed = g.sanitize_context(d.page_content)
+            if removed:
+                events.append("context_sanitized")
+            cleaned.append((d.metadata.get("source", "?"), text))
+
+        contexts = [text for _, text in cleaned]
+        sources = list(dict.fromkeys(src for src, _ in cleaned))
         if not contexts:
             return Answer(UNKNOWN_ANSWER, [], [], self.s.chat_model, 0, 0, (t1 - t0) * 1000, 0.0)
 
-        context_text = "\n\n---\n\n".join(f"[{d.metadata.get('source')}]\n{d.page_content}" for d, _ in hits)
+        context_text = "\n\n---\n\n".join(f"[{src}]\n{text}" for src, text in cleaned)
         messages = PROMPT.format_messages(context=context_text, question=question)
 
         # LiteLLM ko metadata: Langfuse mein app/team tags + same trace id (app ka OTel trace aur
@@ -151,8 +166,12 @@ class RagPipeline:
         t2 = time.perf_counter()
 
         usage = getattr(msg, "usage_metadata", None) or {}
+        # Guardrail 3: jawab mein secret jaisa kuch (asli ya hallucinated) → [REDACTED]
+        answer, redacted = g.redact_output(str(msg.content).strip())
+        if redacted:
+            events.append("output_redacted")
         return Answer(
-            answer=str(msg.content).strip(),
+            answer=answer,
             sources=sources,
             contexts=contexts,
             model=(msg.response_metadata or {}).get("model_name", self.s.chat_model),
@@ -160,4 +179,5 @@ class RagPipeline:
             completion_tokens=int(usage.get("output_tokens", 0)),
             retrieval_ms=(t1 - t0) * 1000,
             generation_ms=(t2 - t1) * 1000,
+            guardrails=events,
         )
