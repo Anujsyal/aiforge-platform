@@ -9,6 +9,11 @@ paths = [
   '''MANUAL-SETUP-GUIDE\.md''',
   '''docs/.*\.md''',
 ]
+# c775933: tests/test_guardrails.py mein fake AWS key literal tha (redaction test). Test ab key runtime pe
+# banata hai; history scan ke liye sirf ye ek commit allowlisted.
+commits = [
+  'c7759339dbf9cbcea40c719cfa1053bb3e2f8b78',
+]
 regexes = [
   '''<[A-Z_]+>''',
   '''sk-local''',

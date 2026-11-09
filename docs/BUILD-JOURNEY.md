@@ -274,6 +274,8 @@ sawaal ──► [1] check_question: "ignore previous instructions", "system pro
 - Unit tests (`tests/test_guardrails.py`): saare attacks block, **aur** golden dataset ke saare sawaal kabhi block nahi (false positive = quality girna).
 - Limit (interview mein khud bolna): regex paraphrase se bypass ho sakte hain. Production mein saath mein classifier (Llama Guard / Prompt Guard, LLM Guard, NeMo Guardrails). Red-team eval isi liye har build pe chalta hai.
 
+**Agli problem (run 42583690047):** guardrails push pe `secrets-scan` (gitleaks) fail: maine redaction test mein nakli AWS key (`AKIA...`) literal likh di thi. Scanner ne sahi pakda. Fix: test key runtime pe banata hai, aur sirf us ek commit ko `.gitleaks.toml` mein allowlist kiya (pura `tests/` path nahi, warna asli leak bhi chhoot jaata). Lesson: test data mein bhi secret-jaise literals mat likho.
+
 **Setup steps:** GitHub secret `AWS_CI_ROLE_ARN = arn:aws:iam::770803607362:role/aiforge-github-ci`, Workflow permissions = Read and write. `image.tag: manual-2` CI ke pehle release commit ke **baad** hatana (pehle hataya to release file ka `0.0.0` deploy hoga = ImagePullBackOff).
 
 **Logs kaise padhe:** promptfoo ki table Actions log mein hoti hai (`[FAIL]` wali rows). Exact numbers "Eval gate" step mein: `EVAL GATE FAILED: passRate=... redteam=...`. HTML report artifact `eval-reports` mein.
