@@ -35,7 +35,8 @@ unset JSON VALS
 echo "  patched secret/$PATH_: ${*}"
 
 echo
-vault_ kv get -mount=secret -format=json "$PATH_" \
-  | python -c "import sys,json;print('  keys:', sorted(json.load(sys.stdin)['data']['data']))"
+# -i ke bina (terminal ka stdin na pakde); sirf keys ke naam
+kubectl -n vault exec vault-0 -- env VAULT_TOKEN="$ROOT_TOKEN" vault kv get -mount=secret -format=json "$PATH_" </dev/null \
+  | python -c "import sys,json;print('  keys:', sorted(json.load(sys.stdin)['data']['data']))" || echo "  (keys list nahi mili; patch ho chuka hai)"
 echo "ESO turant sync:  kubectl annotate externalsecret -A --all force-sync=\$(date +%s) --overwrite"
 echo "Phir jo isko use karta hai use restart karo (env sirf start pe padhi jaati hai)."

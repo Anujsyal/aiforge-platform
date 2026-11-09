@@ -10,7 +10,4 @@ replicas: 1
 # ---- Phase ke hisaab se temporary overrides ----
 # image: CI release file (gitops/release/rag-app.yaml) se tag + digest aata hai (Phase 5 se)
 # secrets: Vault secret/teams/team-alpha/team-alpha-rag → ESO → Secret (Phase 6 se, chart default)
-serviceMonitor:
-  enabled: false             # Phase 7 (Prometheus) mein hata
-otel:
-  enabled: false             # Phase 7 (OTel collector) mein hata
+# serviceMonitor + otel: chart default (true) se, Phase 7 se (Prometheus scrape + OTel traces → Langfuse)
