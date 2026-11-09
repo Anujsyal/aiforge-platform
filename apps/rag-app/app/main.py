@@ -26,6 +26,23 @@ logging.basicConfig(level=logging.INFO, format='{"level":"%(levelname)s","logger
 log = logging.getLogger("rag-app")
 
 
+class _ProbeFilter(logging.Filter):
+    """Probe/scrape ke access logs drop. Asli run (2026-11-09): Loki mein ~1.8k lines/ghanta, lagbhag saari
+    kubelet (/readyz, /healthz), ALB (/apps/<app>/healthz) aur Prometheus (/metrics) ki; asli /ask 5 the."""
+
+    NOISY = ("/healthz", "/readyz", "/metrics")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args if isinstance(record.args, tuple) else ()
+        path = str(args[2]) if len(args) > 2 else record.getMessage()
+        return not path.split("?")[0].endswith(self.NOISY)
+
+
+logging.getLogger("uvicorn.access").addFilter(_ProbeFilter())
+# httpx har Qdrant/LiteLLM call pe INFO likhta hai (probe ke andar bhi). Errors phir bhi WARNING+ pe aate hain.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
 class AskRequest(BaseModel):
     question: str = Field(min_length=3, max_length=2000)
 
@@ -74,7 +91,9 @@ def healthz():
 
 @router.get("/readyz")
 def readyz(p: RagPipeline = Depends(get_pipeline)):
-    if not p.ready():
+    with t.untraced():  # probe har 10s: Qdrant GET ko trace mat karo (Langfuse noise/quota)
+        ok = p.ready()
+    if not ok:
         raise HTTPException(status_code=503, detail="vector store not reachable")
     return {"status": "ready"}
 

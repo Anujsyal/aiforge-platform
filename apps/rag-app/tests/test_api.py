@@ -83,3 +83,20 @@ def test_metrics_exposed():
     r = client.get("/metrics")
     assert r.status_code == 200
     assert "rag_requests_total" in r.text
+
+
+def test_readyz_ok():
+    assert client.get("/readyz").json()["status"] == "ready"
+
+
+def test_probe_access_logs_filtered():
+    import logging
+
+    from app.main import _ProbeFilter
+
+    f = _ProbeFilter()
+    mk = lambda path: logging.LogRecord("uvicorn.access", 20, "", 0, '%s - "%s %s HTTP/%s" %d', ("1.2.3.4", "GET", path, "1.1", 200), None)
+    assert not f.filter(mk("/readyz"))
+    assert not f.filter(mk("/apps/team-alpha-rag/healthz"))
+    assert not f.filter(mk("/metrics"))
+    assert f.filter(mk("/apps/team-alpha-rag/ask"))

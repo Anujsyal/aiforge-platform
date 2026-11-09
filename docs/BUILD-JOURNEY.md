@@ -6,7 +6,7 @@
 > - Har tool ki theory, interview Q&A: [PROJECT-EXPLAINED.md](PROJECT-EXPLAINED.md)
 > - **Ye doc** = asli build ki diary (2026-11-07 se), real IDs, real errors.
 
-**Status (2026-11-09):** Phase 0-6 done ✅ (~65%). Agla: Phase 7 (Observability).
+**Status (2026-11-09):** Phase 0-6 done ✅, Phase 7 lagbhag done (~72%).
 
 ---
 
@@ -345,6 +345,32 @@ Layers ek ke peeche ek: PSA (built-in) → Kyverno (admission) → NetworkPolicy
 
 ---
 
+### Phase 7: Observability (Prometheus, Grafana, Loki, OTel, Langfuse) (2026-11-09)
+
+**Kya bana:**
+- **kube-prometheus-stack** (`monitoring`): Prometheus (3 din retention), Grafana (admin password Vault → ESO), operator, kube-state-metrics, node-exporter (har node). etcd/scheduler/controller-manager/proxy band (k3s mein ek binary).
+- **monitoring-config**: PrometheusRule (recording + alerts `RagHighLatency`, `RagGatewayErrors`, `RagQualityDrop`) + Grafana dashboard ConfigMap (`grafana_dashboard` label, sidecar uthata hai).
+- **Loki** (SingleBinary, filesystem 5Gi, 72h) + **Alloy** (pods ke logs Kubernetes API se, labels namespace/pod/container/**team**).
+- **OTel collector** (`observability`): app ke traces OTLP :4318 pe leta hai → Langfuse `/api/public/otel` (Basic auth Vault → ESO secret `otel-langfuse`).
+- **Langfuse Cloud** (EU, Hobby): LiteLLM ka `langfuse` callback (har generation: prompt, response, tokens, cost) + app ke OTel spans.
+- Toggles on: app `serviceMonitor` + `otel` (chart default), Qdrant `metrics.serviceMonitor.enabled: true`.
+
+**Kisse juda:** App `/metrics` ← Prometheus (NetworkPolicy: monitoring ns → 8080 allowed). App → OTel collector (egress allowed) → Langfuse (internet). LiteLLM → Langfuse. Pods stdout → Alloy → Loki ← Grafana.
+
+**Asli run:**
+1. Saare 5 apps ek baar mein Synced/Healthy (monitoring-config ka CRD wait retry se nikal gaya).
+2. **Langfuse keys:** Phase 6 mein placeholder import hui thi. Naya script `vault-patch-secret.sh` (sirf chuni keys `kv patch`, input chhupa; `vault-seed-secrets.sh` skip karta, `FORCE=1` LiteLLM master key bhi badal deta).
+3. **401 debugging** (LiteLLM: `Langfuse rejected an export ... HTTP 401`, collector: `Unauthenticated ... 401`):
+   - Pehle socha pod ESO sync se pehle restart hua → timestamps compare kiye (Secret 13:28, pods 15:22) → nahi.
+   - Phir region (EU vs US) → browser URL `cloud.langfuse.com` = EU, host sahi.
+   - Asli wajah: **secret key** galat paste hui thi. Langfuse secret key sirf banate waqt ek baar dikhata hai. Fix: key delete → nayi pair → copy button se dono patch → 401 = 0.
+   - Main (Claude) Vault se key ka prefix padh ke verify karna chahta tha, root token use karke. Safety ne roka (sahi). Verify functional tareeke se kiya: logs mein 401 count.
+4. Check: Prometheus targets sab `up` (team-alpha-rag, qdrant-headless, kubelet 12, node-exporter 4...), `rag_requests_total` aa raha, Loki mein 11 namespaces + `team="team-alpha"` label.
+5. **Langfuse mein noise:** 36 traces mein 24 sirf `GET`. Wajah: kubelet readiness probe `/readyz` har 10s; `/readyz` khud trace se excluded tha par uske andar ka Qdrant `httpx GET` alag **root** trace ban raha tha (~8.6k/din → Hobby quota 5-6 din mein khatam, asli traces dab jaate). Fix: `/readyz` mein `suppress_instrumentation()` (`telemetry.untraced()`), test add. Ye app change push = poora CI → eval → sign → release → Argo → Kyverno loop dobara.
+6. **Grafana:** dashboard "AIForge / RAG apps + cost" mein asli data (p95 1.95s, tokens/min prompt vs completion, Qdrant p95). Explore → Loki `{namespace="team-alpha-rag"}` → logs. Do aur cheezein pakdi: (a) logs ka ~saara volume probe noise tha → uvicorn access filter + httpx WARNING (#63); (b) "Error ratio" `No data` kyunki error series hi nahi thi → `or vector(0)` (#64). Teeno fixes (trace noise, log noise, panel) ek hi push / ek CI run.
+
+---
+
 ## 5. Roz ka kaam (operations notes)
 
 ### Session shuru karna
@@ -367,6 +393,14 @@ kubectl -n vault get pods            # 0/1 = sealed
 ```
 `vault-init.json` (unseal key + root token) = Vault ki chaabi. Backup rakh, kabhi share/screenshot nahi. VS Code mein khuli mat chhod.
 Kyverno down ho to tenant pods admit nahi hote (webhook fail-closed) → start ke baad pehle `kubectl -n kyverno get pods`.
+
+### Observability UIs
+| UI | Kaise |
+|---|---|
+| Grafana | `kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80` → localhost:3000, user `admin`, password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' \| base64 -d` |
+| Prometheus | `kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090` |
+| Langfuse | https://cloud.langfuse.com → project aiforge → Tracing |
+| Secret badalna (ek key) | `./scripts/vault-patch-secret.sh <path> <key...>` → force-sync → consumer restart |
 
 ### Session band karna
 ```bash
@@ -461,8 +495,8 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 |---|---|
 | ~~`image.tag: manual-2`~~ | 5 ✅ hata diya |
 | ~~`secrets.useExternalSecret: false`~~ | 6 ✅ hata diya |
-| `serviceMonitor.enabled: false`, `otel.enabled: false` | 7 |
-| Qdrant `metrics.serviceMonitor.enabled: false` (`30-ai.yaml`) | 7 (true karna) |
+| ~~`serviceMonitor.enabled: false`, `otel.enabled: false`~~ | 7 ✅ hata diya |
+| ~~Qdrant `metrics.serviceMonitor.enabled: false`~~ | 7 ✅ true |
 | `vectorStore.create: false` | 8 |
 
 ---

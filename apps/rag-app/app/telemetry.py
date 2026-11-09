@@ -71,3 +71,20 @@ def span(name: str):
         from contextlib import nullcontext
 
         return nullcontext()
+
+
+def untraced():
+    """Health checks ke andar ke calls (Qdrant GET) trace mat karo.
+
+    Asli run (2026-11-09): /readyz khud excluded tha, par uske andar ka httpx GET (Qdrant) har ~10s pe
+    alag ROOT trace ban raha tha: Langfuse mein 36 mein se 24 traces sirf "GET" (~8.6k/din, Hobby quota
+    5-6 din mein khatam, asli traces dab jaate). suppress_instrumentation us block ke saare spans band karta hai.
+    """
+    try:
+        from opentelemetry.instrumentation.utils import suppress_instrumentation
+
+        return suppress_instrumentation()
+    except Exception:
+        from contextlib import nullcontext
+
+        return nullcontext()
