@@ -5,4 +5,4 @@ resources:
 images:
   # CI (backstage-image.yml) newTag update karta hai
   - name: 770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/backstage
-    newTag: "0.0.0"
+    newTag: "2-824612f"
