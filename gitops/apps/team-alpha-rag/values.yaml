@@ -9,8 +9,7 @@ replicas: 1
 
 # ---- Phase ke hisaab se temporary overrides ----
 # image: CI release file (gitops/release/rag-app.yaml) se tag + digest aata hai (Phase 5 se)
-secrets:
-  useExternalSecret: false   # Phase 6 (Vault + ESO) mein hata
+# secrets: Vault secret/teams/team-alpha/team-alpha-rag → ESO → Secret (Phase 6 se, chart default)
 serviceMonitor:
   enabled: false             # Phase 7 (Prometheus) mein hata
 otel:
