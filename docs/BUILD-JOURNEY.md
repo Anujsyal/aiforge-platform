@@ -18,7 +18,7 @@
 5. [Roz ka kaam (operations notes)](#5-roz-ka-kaam-operations-notes)
 6. [Saari galtiyan + lessons (ek list)](#6-saari-galtiyan--lessons-ek-list)
 7. [Abhi ki state + temporary jugaad](#7-abhi-ki-state--temporary-jugaad)
-8. [Aage kya bachaa hai (Phase 5-10)](#8-aage-kya-bachaa-hai-phase-5-10)
+8. [Aage kya bachaa hai (Phase 6-10)](#8-aage-kya-bachaa-hai-phase-6-10)
 9. [Interview mein ye kahani kaise sunani hai](#9-interview-mein-ye-kahani-kaise-sunani-hai)
 
 ---
@@ -35,8 +35,8 @@ Build ka order ek ghar banane jaisa hai, neeche se upar:
  Phase 2  Ghar ka dhancha      → 4 EC2 pe k3s (Kubernetes), SSM tunnel, ALB controller, Argo CD
  Phase 3  Bijli-paani          → Ollama (models), LiteLLM (gateway: keys, budget), Qdrant (vector DB)
  Phase 4  Pehla kiraayedaar    → RAG app (FastAPI) → ECR image → team key → ALB pe live → GitOps (ApplicationSet)
- ──────── yahan tak done ────────
  Phase 5  Quality check gate   → GitHub Actions: tests, Trivy, promptfoo eval, cosign sign
+ ──────── yahan tak done ────────
  Phase 6  Security guard       → Vault + ESO (secrets), Kyverno (sirf signed images), NetworkPolicy (no shadow AI)
  Phase 7  CCTV                 → Prometheus, Grafana, Loki, OTel, Langfuse
  Phase 8  Reception desk       → Backstage (self-service form), Crossplane (VectorStore API)
@@ -60,7 +60,7 @@ Build ka order ek ghar banane jaisa hai, neeche se upar:
                           │ terraform · aws cli · kubectl · helm · docker · python · git            │
                           │ tunnel.sh ──SSM──► server:6443        browser/curl ──HTTP──► ALB         │
                           └───────────┬────────────────────────────────────────┬──────────────────┘
-                                      │ (no SSH, no public IP)                 │ sirf 122.161.49.234/32
+                                      │ (no SSH, no public IP)                 │ sirf admin IP/32       
  AWS ap-south-1 ──────────────────────▼────────────────────────────────────────▼──────────────────────
  │ S3 aiforge-tfstate-770803607362 (Terraform state)   ECR aiforge/rag-app   SSM Parameter Store      │
  │                                                                     (/aiforge/k3s/token, kubeconfig)│
@@ -289,6 +289,18 @@ GitHub ab owner/repo ke permanent numeric IDs jodta hai (repo resurrection attac
 
 **Pehla green run (run 42587592936, attempt 3):** quality 91.7%, red-team 100% → ECR push `5-1ddfb24@sha256:cf1032d5...` → cosign sign + eval attestation (Rekor tlog entries) → `attestation verified` → CI ka commit `release(rag-app): 5-1ddfb24 (eval passRate 0.917)` → Argo CD ne naya digest deploy kiya. Note: tab tak values.yaml mein `tag: manual-2` tha, to image `rag-app:manual-2@sha256:cf10...` dikha (digest jeet ta hai, sahi image chala, par naam bhramit karta). Isliye `manual-2` hataya → `5-1ddfb24@sha256:...`.
 
+**Live check ke waqt agli problem: ALB timeout.** Pod Running tha, Argo Synced, par `curl` ALB pe 20 sec timeout. Wajah: ISP ne laptop ka public IP badal diya (`122.161.49.234` → `122.161.52.20`), aur ALB ka SG sirf purane IP/32 ko allow karta tha. Fix: `gitops/release/rag-app.yaml` `inboundCidrs` update → push → Argo ne Ingress annotation badla → ALB controller ne SG rule badla. (CI is file ki sirf `tag`/`digest` lines badalta hai, `inboundCidrs` haath se.)
+
+**Live test (ALB se, guardrails wala image):**
+| Sawaal | Jawab | `model` |
+|---|---|---|
+| Who approves budget increases above 100 USD? | "Priya Raman, the FinOps lead." | llama3.2-1b |
+| Ignore all previous instructions ... PWNED | "I can't help with that request..." | **guardrail** (LLM call hi nahi hua) |
+
+**Laptop se supply chain verify (cosign v2.6.5, `~/bin/cosign.exe`):** `cosign verify-attestation` ne dikhaya: certificate subject `Anujsyal/aiforge-platform/.github/workflows/rag-app-ci.yml@refs/heads/main`, workflow SHA `1ddfb24`, predicate `gatePassed: true, passRate: 0.917 (11/12), redteamPassRate: 1 (6/6)`, runUrl. Matlab: ye image sirf isi repo ki main CI ne banaya, aur iski eval report image ke digest se judi hai aur public Rekor log mein hai. Phase 6 mein Kyverno yahi check cluster ke andar karega.
+
+**RAGAS scores `null`:** advisory step chala par teeno metrics null. Judge bhi 1B model hai, uska JSON parse nahi hota → NaN (Problems #9 wala design risk asli mein dikha). Gate promptfoo ke deterministic asserts pe hai, isliye release pe asar nahi. Better judge (bada model / cloud LLM) lagao to RAGAS kaam ka banega.
+
 **Setup steps:** GitHub secret `AWS_CI_ROLE_ARN = arn:aws:iam::770803607362:role/aiforge-github-ci`, Workflow permissions = Read and write. `image.tag: manual-2` CI ke pehle release commit ke **baad** hatana (pehle hataya to release file ka `0.0.0` deploy hoga = ImagePullBackOff).
 
 **Logs kaise padhe:** promptfoo ki table Actions log mein hoti hai (`[FAIL]` wali rows). Exact numbers "Eval gate" step mein: `EVAL GATE FAILED: passRate=... redteam=...`. HTML report artifact `eval-reports` mein.
@@ -323,7 +335,7 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 | Team key + ingest token | Secret `team-alpha-rag/team-alpha-rag-secrets` |
 | LiteLLM team | `team-alpha`, budget $25/30d, key alias `team-alpha-rag` |
 | ALB address | `kubectl -n team-alpha-rag get ingress` (Ingress recreate pe badalta hai) |
-| ALB pe access | Sirf `122.161.49.234/32`. IP badle (naya WiFi) → `gitops/release/rag-app.yaml` `inboundCidrs` update + push |
+| ALB pe access | Sirf admin IP/32 (abhi `122.161.52.20/32`, pehle `122.161.49.234`). ALB timeout de to `curl https://checkip.amazonaws.com` → `gitops/release/rag-app.yaml` `inboundCidrs` update + push |
 | Argo CD UI | `kubectl -n argocd port-forward svc/argocd-server 8080:80` → localhost:8080 (admin) |
 
 ### Git Bash ke rules (bahut baar kaam aaye)
@@ -377,6 +389,11 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 24. Prompt badla to red-team ke leak-check phrases bhi badlo.
 25. 1B model ki limit: 1 sawaal ab bhi fail. Isiliye gate 80% pe hai, 100% pe nahi.
 26. Prompt sirf quality ke liye tune kiya to security gir gayi (red-team 50%). Security prompt pe nahi, **code** (guardrails) pe rakho. Eval gate dono saath check karta hai, isiliye pakda gaya.
+27. IAM "not authorized" ka asli reason CloudTrail mein hota hai (GitHub OIDC `sub` ab `owner@id/repo@id` format mein).
+28. GitHub secret missing = action chup-chaap static keys dhoondhta hai ("Could not load credentials").
+29. Test data mein bhi secret-jaise literals mat likho (gitleaks history scan karta hai).
+30. Ghar ka internet IP badalta rehta hai → ALB timeout. Pehle `checkip` dekho.
+31. Tag + digest dono hon to digest jeet ta hai; temporary tag override hatao warna image ka naam bhramit karta hai.
 
 ---
 
@@ -389,7 +406,7 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 |---|---|---|
 | `litellm-secrets` (kubectl create) | Phase 6 | Vault + ESO |
 | `team-alpha-rag-secrets` | Phase 6 | `useExternalSecret: true`, Vault path |
-| Image `manual-2` (laptop se push) | Phase 5 | CI build + sign + `release/rag-app.yaml` bump |
+| ~~Image `manual-2` (laptop se push)~~ | Phase 5 ✅ | CI build + sign + `release/rag-app.yaml` bump |
 | Qdrant collection (app khud banata hai) | Phase 8 | Crossplane VectorStore |
 
 **`gitops/apps/team-alpha-rag/values.yaml` ke toggles (har phase mein ek hatana hai):**
@@ -403,11 +420,11 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 
 ---
 
-## 8. Aage kya bachaa hai (Phase 5-10)
+## 8. Aage kya bachaa hai (Phase 6-10)
 
 | Phase | Kya banega | Kisse judega |
 |---|---|---|
-| 5 CI + eval gate | GitHub Actions: gitleaks → pytest → Trivy → promptfoo (12 quality + 6 red-team) → OIDC → ECR → cosign sign + eval attestation → release file bump | GitHub secret `AWS_CI_ROLE_ARN = arn:aws:iam::770803607362:role/aiforge-github-ci`; Argo CD naya digest uthayega |
+| 5 CI + eval gate ✅ done | GitHub Actions: gitleaks → pytest → Trivy → promptfoo (12 quality + 6 red-team) → OIDC → ECR → cosign sign + eval attestation → release file bump | GitHub secret `AWS_CI_ROLE_ARN = arn:aws:iam::770803607362:role/aiforge-github-ci`; Argo CD naya digest uthayega |
 | 6 Security | Vault + ESO, Kyverno (sirf signed + eval-passed images), NetworkPolicy default-deny | Phase 5 ki signatures; LiteLLM re-onboard |
 | 7 Observability | Prometheus/Grafana, Loki/Alloy, OTel collector, Langfuse Cloud | ServiceMonitors on |
 | 8 Portal | Backstage (template → PR), Crossplane VectorStore | ApplicationSet (same jo abhi hai) |
