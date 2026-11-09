@@ -1113,12 +1113,14 @@ curl -s localhost:4000/team/list -H "Authorization: Bearer $(kubectl -n ai-gatew
 ```
 LiteLLM UI → **Usage** (team/key/model wise). Cost = hamari "internal price" (`input_cost_per_token`), kyunki self-hosted model ka vendor bill 0 hai.
 
-**Budget demo:** `team-beta` ka budget tiny kar:
+**Budget demo** (script: budget yaad → $0.000001 → `/ask` 429 → budget **wapas**, beech mein ruke tab bhi; master key print nahi hoti):
 ```bash
-curl -s localhost:4000/team/update -H "Authorization: Bearer $MK" -H 'content-type: application/json' \
-  -d '{"team_id":"<team-beta id>","max_budget":0.000001}'
-# kuch /ask → HTTP 429 "team LLM budget exceeded" (app LiteLLM ka budget error 429 mein map karta hai)
+kubectl -n ai-gateway port-forward svc/litellm 4000:4000      # alag terminal
+./scripts/litellm-budget-demo.sh team-beta team-beta-faq
+#  /ask → HTTP 429  {"detail":"team LLM budget exceeded"}
+#  Restored: budget wapas $25
 ```
+> Haath se `$MK` + `team_id` + curl paste karne pe pehle toota tha (Malformed key, KeyError), isliye script.
 
 ### 9.2 OpenCost
 ```bash
