@@ -1,0 +1,71 @@
+# Captured 2026-11-09T21:11Z from the live AIForge cluster (ap-south-1)
+$ kubectl get nodes -L aiforge.io/pool,node.kubernetes.io/instance-type,topology.kubernetes.io/zone
+
+NAME                                          STATUS   ROLES           AGE    VERSION        POOL      INSTANCE-TYPE    ZONE
+ip-10-20-10-10.ap-south-1.compute.internal    Ready    control-plane   2d1h   v1.37.2+k3s1   system    m7i-flex.large   ap-south-1a
+ip-10-20-10-205.ap-south-1.compute.internal   Ready    <none>          2d1h   v1.37.2+k3s1   general   m7i-flex.large   ap-south-1a
+ip-10-20-10-251.ap-south-1.compute.internal   Ready    <none>          2d1h   v1.37.2+k3s1   ai        m7i-flex.large   ap-south-1a
+ip-10-20-11-22.ap-south-1.compute.internal    Ready    <none>          2d1h   v1.37.2+k3s1   general   m7i-flex.large   ap-south-1b
+
+$ kubectl get node -o jsonpath='{range .items[*]}{.metadata.name}{"  "}{.spec.providerID}{"\n"}{end}'
+
+ip-10-20-10-10.ap-south-1.compute.internal  aws:///ap-south-1a/i-094f278871a07219f
+ip-10-20-10-205.ap-south-1.compute.internal  aws:///ap-south-1a/i-09b904ee92ee75b4d
+ip-10-20-10-251.ap-south-1.compute.internal  aws:///ap-south-1a/i-0d32eafeef211900a
+ip-10-20-11-22.ap-south-1.compute.internal  aws:///ap-south-1b/i-0e9de26b1277e0879
+
+$ kubectl -n argocd get applications
+
+NAME                           SYNC STATUS   HEALTH STATUS
+aiforge-root                   Synced        Healthy
+alloy                          Synced        Healthy
+aws-load-balancer-controller   Synced        Healthy
+backstage                      Synced        Healthy
+crossplane                     Synced        Healthy
+crossplane-config              Synced        Healthy
+external-secrets               Synced        Healthy
+kube-prometheus-stack          Synced        Healthy
+kyverno                        Synced        Healthy
+kyverno-policies               Synced        Healthy
+litellm                        Synced        Healthy
+loki                           Synced        Healthy
+monitoring-config              Synced        Healthy
+ollama                         Synced        Healthy
+opencost                       Synced        Healthy
+otel-collector                 Synced        Healthy
+platform-namespaces            Synced        Healthy
+platform-network-policies      Synced        Healthy
+qdrant                         Synced        Healthy
+secrets-config                 Synced        Healthy
+team-alpha-rag                 Synced        Healthy
+team-beta-faq                  Synced        Healthy
+tenant-appsets                 Synced        Healthy
+vault                          Synced        Healthy
+
+$ kubectl -n argocd get applicationset
+
+NAME       AGE
+rag-apps   25h
+
+$ kubectl get ns -L aiforge.io/team,aiforge.io/tenant,pod-security.kubernetes.io/enforce
+
+NAME                STATUS   AGE     TEAM         TENANT   ENFORCE
+ai-gateway          Active   35h                           baseline
+ai-serving          Active   35h                           restricted
+argocd              Active   35h                           
+backstage           Active   35h                           baseline
+crossplane-system   Active   4h46m                         
+default             Active   2d1h                          
+external-secrets    Active   9h                            
+kube-node-lease     Active   2d1h                          
+kube-public         Active   2d1h                          
+kube-system         Active   2d1h                          
+kyverno             Active   9h                            
+monitoring          Active   35h                           privileged
+observability       Active   35h                           baseline
+opencost            Active   35h                           baseline
+team-alpha-rag      Active   26h     team-alpha   true     restricted
+team-beta-faq       Active   169m    team-beta    true     restricted
+vault               Active   35h                           baseline
+vector-db           Active   35h                           baseline
+

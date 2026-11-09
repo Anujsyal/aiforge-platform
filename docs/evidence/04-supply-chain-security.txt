@@ -1,0 +1,114 @@
+# Captured 2026-11-09T21:11Z from the live AIForge cluster (ap-south-1)
+$ cat gitops/release/rag-app.yaml
+
+# CI (rag-app-ci.yml) is file ka image block update karta hai. Haath se mat badal (sirf inboundCidrs).
+# Saare RAG apps same signed + evaluated image chalate hain; farq sirf config (values.yaml) ka hai.
+image:
+  repository: 770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/rag-app
+  tag: "6-27959de"
+  digest: "sha256:8851ba725726536f39cb06e443032a8797d4d94c529e3302bd0df7b63cc26cc0"
+ingress:
+  inboundCidrs: 122.161.52.20/32   # tera public IP/32 (scripts/configure.sh bharta hai)
+
+$ git log --oneline --grep='release(' -5
+
+46e91ac release(backstage): 2-824612f
+233c9c4 release(rag-app): 6-27959de (eval passRate 0.917)
+dbec460 release(rag-app): 5-1ddfb24 (eval passRate 0.917)
+
+$ kubectl get pods -A -l app.kubernetes.io/part-of=aiforge -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}  {.metadata.annotations.kyverno\.io/verify-images}{"\n"}{end}'
+
+team-alpha-rag/team-alpha-rag-c9dbb6bf7-j42dq  {"770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/rag-app@sha256:8851ba725726536f39cb06e443032a8797d4d94c529e3302bd0df7b63cc26cc0":"pass"}
+team-beta-faq/team-beta-faq-f5894c6db-rrbx5  {"770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/rag-app@sha256:8851ba725726536f39cb06e443032a8797d4d94c529e3302bd0df7b63cc26cc0":"pass"}
+
+$ kubectl get clusterpolicy
+
+Warning: kyverno.io/v1 ClusterPolicy is deprecated and will be removed in a future release; migrate to ValidatingPolicy, MutatingPolicy, GeneratingPolicy or ImageValidatingPolicy (policies.kyverno.io), see https://kyverno.io/docs/guides/migration-to-cel/
+NAME                                 ADMISSION   BACKGROUND   READY   AGE   MESSAGE
+block-shadow-ai                      true        true         True    8h    Ready
+generate-default-deny                true        true         True    8h    Ready
+require-requests-limits              true        true         True    8h    Ready
+require-team-labels                  true        true         True    8h    Ready
+restrict-image-registries            true        true         True    8h    Ready
+tenant-namespace-psa-restricted      true        true         True    8h    Ready
+verify-signed-and-evaluated-images   true        false        True    8h    Ready
+
+$ kubectl -n team-alpha-rag run bad --image=770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/rag-app:manual-1 --restart=Never --dry-run=server
+
+Error from server: admission webhook "mutate.kyverno.svc-fail" denied the request: 
+
+resource Pod/team-alpha-rag/bad was blocked due to the following policies 
+
+verify-signed-and-evaluated-images:
+  verify-signature-and-eval: 'failed to verify image 770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/rag-app:manual-1: .attestors[0].entries[0].keyless: no signatures found'
+
+$ kubectl -n team-alpha-rag run nginx --image=nginx --restart=Never --dry-run=server
+
+Error from server (Forbidden): pods "nginx" is forbidden: violates PodSecurity "restricted:latest": allowPrivilegeEscalation != false (container "nginx" must set securityContext.allowPrivilegeEscalation=false), unrestricted capabilities (container "nginx" must set securityContext.capabilities.drop=["ALL"]), runAsNonRoot != true (pod or container "nginx" must set securityContext.runAsNonRoot=true), seccompProfile (pod or container "nginx" must set securityContext.seccompProfile.type to "RuntimeDefault" or "Localhost")
+
+$ kubectl -n team-alpha-rag run nginx --image=nginx --restart=Never --dry-run=server --overrides='{"apiVersion":"v1","spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":101,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"nginx","image":"nginx","securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
+
+Error from server: admission webhook "validate.kyverno.svc-fail" denied the request: 
+
+resource Pod/team-alpha-rag/nginx was blocked due to the following policies 
+
+require-requests-limits:
+  cpu-memory: 'validation error: CPU/memory requests and memory limits are required. rule cpu-memory failed at path /spec/containers/0/resources/limits/'
+require-team-labels:
+  team-and-cost-center: 'validation error: Pods need labels aiforge.io/team and aiforge.io/cost-center (FinOps showback). rule team-and-cost-center failed at path /metadata/labels/aiforge.io/cost-center/'
+restrict-image-registries:
+  only-aiforge-ecr: 'validation error: Tenant images must come from 770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/. rule only-aiforge-ecr failed at path /spec/containers/0/image/'
+
+$ kubectl -n team-alpha-rag set env deploy/team-alpha-rag OPENAI_API_KEY=sk-test --dry-run=server -o name
+
+error: failed to patch env update to pod template: admission webhook "validate.kyverno.svc-fail" denied the request: 
+
+resource Deployment/team-alpha-rag/team-alpha-rag was blocked due to the following policies 
+
+block-shadow-ai:
+  autogen-no-external-ai-env: Direct external AI provider access is not allowed. Use the LiteLLM gateway (http://litellm.ai-gateway.svc.cluster.local:4000/v1) with your team key.
+
+$ kubectl -n team-alpha-rag get networkpolicy
+
+NAME                     POD-SELECTOR   AGE
+default-deny-all         <none>         8h
+team-alpha-rag-egress    <none>         25h
+team-alpha-rag-ingress   <none>         25h
+
+$ kubectl -n team-alpha-rag exec deploy/team-alpha-rag -- python -c "import urllib.request;urllib.request.urlopen('https://api.openai.com/v1/models',timeout=5)" 2>&1 | tail -1
+
+command terminated with exit code 1
+
+$ kubectl -n team-alpha-rag exec deploy/team-alpha-rag -- python -c "import urllib.request;print(urllib.request.urlopen('http://litellm.ai-gateway.svc.cluster.local:4000/health/liveliness',timeout=5).read())"
+
+b'"I\'m alive!"'
+
+$ kubectl -n team-alpha-rag exec deploy/team-alpha-rag -- python -c "import urllib.request;urllib.request.urlopen('http://ollama.ai-serving.svc.cluster.local:11434/api/tags',timeout=5)" 2>&1 | tail -1
+
+command terminated with exit code 1
+
+$ kubectl get clustersecretstore; kubectl get externalsecret -A
+
+NAME    AGE   STATUS   CAPABILITIES   READY
+vault   8h    Valid    ReadWrite      True
+NAMESPACE           NAME                     STORETYPE            STORE   REFRESH INTERVAL   STATUS         READY   LAST SYNC
+ai-gateway          litellm-secrets          ClusterSecretStore   vault   1h                 SecretSynced   True    35m
+backstage           backstage-secrets        ClusterSecretStore   vault   1h                 SecretSynced   True    40m
+crossplane-system   aws-crossplane-creds     ClusterSecretStore   vault   1h                 SecretSynced   True    43m
+monitoring          grafana-admin            ClusterSecretStore   vault   1h                 SecretSynced   True    35m
+observability       otel-langfuse            ClusterSecretStore   vault   1h                 SecretSynced   True    35m
+team-alpha-rag      team-alpha-rag-secrets   ClusterSecretStore   vault   1h                 SecretSynced   True    35m
+team-beta-faq       team-beta-faq-secrets    ClusterSecretStore   vault   1h                 SecretSynced   True    49m
+
+$ kubectl -n vault exec vault-0 -- vault status -format=json | python -c "import sys,json;d=json.load(sys.stdin);print({k:d[k] for k in ('initialized','sealed','version','storage_type')})"
+
+{'initialized': True, 'sealed': False, 'version': '2.0.4', 'storage_type': 'file'}
+
+
+# NetworkPolicy tests (poori error line)
+$ pod → https://api.openai.com/v1/models
+BLOCKED: URLError <urlopen error [Errno 101] Network is unreachable>
+
+$ pod → http://ollama.ai-serving.svc.cluster.local:11434/api/tags
+BLOCKED: URLError <urlopen error [Errno 111] Connection refused>
+

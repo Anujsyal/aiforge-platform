@@ -1,0 +1,46 @@
+# Captured 2026-11-09T21:11Z from the live AIForge cluster (ap-south-1)
+$ kubectl get --raw '/api/v1/namespaces/monitoring/services/kube-prometheus-stack-prometheus:9090/proxy/api/v1/targets?state=active' | python -c "import sys,json,collections;t=json.load(sys.stdin)['data']['activeTargets'];[print(f'{j:45} {h:5} {n}') for (j,h),n in sorted(collections.Counter((x['labels'].get('job'),x['health']) for x in t).items())]"
+
+apiserver                                     up    1
+coredns                                       up    1
+kube-prometheus-stack-grafana                 up    1
+kube-prometheus-stack-operator                up    1
+kube-prometheus-stack-prometheus              up    2
+kube-state-metrics                            up    1
+kubelet                                       up    12
+node-exporter                                 up    4
+opencost                                      up    1
+qdrant-headless                               up    1
+team-alpha-rag                                up    1
+team-beta-faq                                 up    1
+
+$ kubectl get --raw '/api/v1/namespaces/monitoring/services/kube-prometheus-stack-prometheus:9090/proxy/api/v1/query?query=sum%20by%20(namespace,status)%20(rag_requests_total)' | python -c "import sys,json;[print(r['metric'],r['value'][1]) for r in json.load(sys.stdin)['data']['result']]"
+
+{'namespace': 'team-alpha-rag', 'status': 'ok'} 3
+{'namespace': 'team-beta-faq', 'status': 'ok'} 2
+{'namespace': 'team-beta-faq', 'status': 'error'} 1
+
+$ kubectl get --raw '/api/v1/namespaces/monitoring/services/kube-prometheus-stack-prometheus:9090/proxy/api/v1/rules' | python -c "import sys,json;[print(r['name'],r.get('state','')) for g in json.load(sys.stdin)['data']['groups'] if g['name'].startswith('aiforge') for r in g['rules']]"
+
+RagHighLatency inactive
+RagGatewayErrors inactive
+RagQualityDrop inactive
+aiforge:rag_requests:rate5m 
+aiforge:rag_latency_p95:5m 
+aiforge:llm_tokens:rate1h 
+
+$ kubectl get --raw '/api/v1/namespaces/observability/services/loki-gateway:80/proxy/loki/api/v1/label/namespace/values'
+
+{"status":"success","data":["ai-gateway","ai-serving","argocd","backstage","crossplane-system","external-secrets","kube-system","kyverno","monitoring","observability","opencost","team-alpha-rag","team-beta-faq","vault","vector-db"]}
+
+$ kubectl -n team-alpha-rag get servicemonitor; kubectl -n vector-db get servicemonitor
+
+NAME             AGE
+team-alpha-rag   7h41m
+NAME     AGE
+qdrant   7h43m
+
+$ kubectl -n ai-gateway logs deploy/litellm --since=60m 2>&1 | grep -c 'HTTP 401' | sed 's/^/Langfuse 401s last 60m: /'
+
+Langfuse 401s last 60m: 0
+

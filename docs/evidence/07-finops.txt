@@ -1,0 +1,24 @@
+# Captured 2026-11-09T21:11Z from the live AIForge cluster (ap-south-1)
+$ aws budgets describe-budgets --account-id 770803607362 --query 'Budgets[?starts_with(BudgetName,`aiforge`)].[BudgetName,BudgetLimit.Amount,CalculatedSpend.ActualSpend.Amount]' --output table
+
+----------------------------------------------
+|               DescribeBudgets              |
++--------------------------+-------+---------+
+|  aiforge-account-monthly |  60.0 |  0.0    |
+|  aiforge-project-monthly |  40.0 |  7.881  |
++--------------------------+-------+---------+
+
+$ aws ec2 describe-instances --filters Name=tag:Project,Values=aiforge Name=instance-state-name,Values=running --query 'Reservations[].Instances[].Tags[?Key==`Environment`||Key==`Service`||Key==`Project`]' --output text | sort | uniq -c
+
+      4 Environment	Dev
+      4 Project	aiforge
+      4 Service	aiforge-platform
+
+$ curl -s 'https://api.github.com/repos/Anujsyal/aiforge-platform/issues/2/comments' | python -c "import sys,json,re;b=json.load(sys.stdin)[0]['body'];i=b.find('Monthly cost change');print(re.sub('<[^>]+>','',b[i:i+200]))"
+
+Monthly cost change for Anujsyal/aiforge-platform/terraform/stacks/platform
+Amount:  +$158 ($393 → $551)
+Percent: +40%
+
+──────────────────────────
+

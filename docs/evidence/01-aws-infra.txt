@@ -1,0 +1,49 @@
+# Captured 2026-11-09T21:11Z from the live AIForge cluster (ap-south-1)
+$ aws ec2 describe-subnets --filters Name=tag:Project,Values=aiforge --query 'Subnets[].[Tags[?Key==`Name`]|[0].Value,CidrBlock,AvailabilityZone,MapPublicIpOnLaunch]' --output table
+
+--------------------------------------------------------------------------
+|                             DescribeSubnets                            |
++------------------------------+----------------+--------------+---------+
+|  aiforge-public-ap-south-1b  |  10.20.1.0/24  |  ap-south-1b |  False  |
+|  aiforge-private-ap-south-1a |  10.20.10.0/24 |  ap-south-1a |  False  |
+|  aiforge-private-ap-south-1b |  10.20.11.0/24 |  ap-south-1b |  False  |
+|  aiforge-public-ap-south-1a  |  10.20.0.0/24  |  ap-south-1a |  False  |
++------------------------------+----------------+--------------+---------+
+
+$ aws ec2 describe-nat-gateways --filter Name=tag:Project,Values=aiforge --query 'NatGateways[].[NatGatewayId,State,SubnetId]' --output table
+
+--------------------------------------------------------------------
+|                        DescribeNatGateways                       |
++------------------------+------------+----------------------------+
+|  nat-071988c2b21f78785 |  available |  subnet-00b2c64bacfa279f8  |
++------------------------+------------+----------------------------+
+
+$ aws ec2 describe-vpc-endpoints --filters Name=tag:Project,Values=aiforge --query 'VpcEndpoints[].[ServiceName,VpcEndpointType,State]' --output table
+
+----------------------------------------------------------------
+|                     DescribeVpcEndpoints                     |
++-----------------------------------+------------+-------------+
+|  com.amazonaws.ap-south-1.ecr.api |  Interface |  available  |
+|  com.amazonaws.ap-south-1.ecr.dkr |  Interface |  available  |
+|  com.amazonaws.ap-south-1.s3      |  Gateway   |  available  |
++-----------------------------------+------------+-------------+
+
+$ aws ec2 describe-instances --filters Name=tag:Project,Values=aiforge Name=instance-state-name,Values=running --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,InstanceType,PrivateIpAddress,PublicIpAddress,MetadataOptions.HttpTokens]' --output table
+
+-------------------------------------------------------------------------------
+|                              DescribeInstances                              |
++----------------------+-----------------+---------------+-------+------------+
+|  aiforge-k3s-server  |  m7i-flex.large |  10.20.10.10  |  None |  required  |
+|  aiforge-k3s-agent-0 |  m7i-flex.large |  10.20.10.251 |  None |  required  |
+|  aiforge-k3s-agent-2 |  m7i-flex.large |  10.20.10.205 |  None |  required  |
+|  aiforge-k3s-agent-1 |  m7i-flex.large |  10.20.11.22  |  None |  required  |
++----------------------+-----------------+---------------+-------+------------+
+
+$ aws elbv2 describe-load-balancers --query 'LoadBalancers[].[LoadBalancerName,Scheme,State.Code]' --output table
+
+---------------------------------------------------------
+|                 DescribeLoadBalancers                 |
++-------------------------+-------------------+---------+
+|  k8s-aiforge-e8a52a6c8a |  internet-facing  |  active |
++-------------------------+-------------------+---------+
+

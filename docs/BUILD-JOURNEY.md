@@ -446,6 +446,8 @@ Account:    AWS Budgets (account $60, Project tag $40) → SNS → email
 
 **Disaster recovery (zero se):** `terraform apply` → `get-kubeconfig.sh` + `tunnel.sh` → Argo CD helm (OCI) → `kubectl apply -f gitops/bootstrap/root.yaml` → `vault-init.sh` → `vault-seed-secrets.sh` + `vault-patch-secret.sh` (Langfuse, PAT) + `crossplane-aws-key.sh` → `litellm-onboard-team.sh` per team. Baaki sab Git se.
 
+**Saboot (destroy se pehle save):** [docs/screenshots/](screenshots/) (18 screenshots, index README) + [docs/evidence/](evidence/) (7 text files, live cluster se `scripts/capture-evidence.sh`).
+
 **Demo screenshots checklist** (interview/portfolio):
 | # | Kya | Kahan |
 |---|---|---|
@@ -465,19 +467,24 @@ Account:    AWS Budgets (account $60, Project tag $40) → SNS → email
 | 14 | Infracost PR comment (+$158/month) | GitHub PR #2 |
 | 15 | SNS email | Gmail |
 
-**Cleanup (jab project band karna ho)** — order zaroori hai: ALB aur S3 buckets Terraform ne nahi, controllers ne banaye hain. Wo pehle na hate to `terraform destroy` VPC pe atakta hai / bucket orphan rehta hai. Aur root ka self-heal deleted cheezein wapas bana deta hai.
+**Cleanup (jab project band karna ho)** — order zaroori hai: ALB aur S3/Qdrant Terraform ne nahi, controllers ne banaye. Team apps / ApplicationSet pe Argo finalizer **nahi** hai → app delete karne se Ingress/VectorStore nahi hat-te, khud hatane padte. Crossplane IAM user ki access key Terraform ke bahar bani (`crossplane-aws-key.sh`) → pehle delete, warna `DeleteConflict`.
 ```bash
-# 1. Root ko hatao BINA children delete kiye (self-heal band; finalizer hata ke)
+# 1. Root hatao bina children delete kiye (warna self-heal sab wapas bana deta)
 kubectl -n argocd patch app aiforge-root --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]'
 kubectl -n argocd delete app aiforge-root
-# 2. Tenant apps hatao (cascade): Ingress → ALB controller ALB delete karta; VectorStore → Crossplane collection/bucket delete
+# 2. Tenants: pehle ApplicationSet controller ka source, phir appset (generated apps bhi jaate, resources nahi)
 kubectl -n argocd delete app tenant-appsets
-kubectl get vectorstore -A                                   # khaali hone tak ruk
-aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName,'k8s-aiforge')].LoadBalancerName"   # [] hone tak ruk
-aws s3 ls | grep aiforge-vs                                  # khaali
-# 3. Infra
-cd terraform/stacks/platform && terraform destroy            # plan padh: sirf aiforge resources
-# 4. State bucket (sabse aakhir, chahiye to): cd ../../bootstrap && terraform destroy
+kubectl -n argocd delete applicationset rag-apps
+# 3. Controllers ke banaye cloud resources khud hatao, controllers ke chalte-chalte
+kubectl delete vectorstore -A --all                 # Crossplane: Qdrant collection (+ S3 bucket) delete
+kubectl delete ingress -A --all                     # ALB controller: ALB + uske security groups delete
+aws elbv2 describe-load-balancers --query "LoadBalancers[].LoadBalancerName"   # [] hone tak ruk (1-2 min)
+aws s3 ls | grep aiforge-vs                         # khaali
+# 4. Terraform ke bahar bani Crossplane key
+for k in $(aws iam list-access-keys --user-name aiforge-crossplane --query 'AccessKeyMetadata[].AccessKeyId' --output text); do aws iam delete-access-key --user-name aiforge-crossplane --access-key-id $k; done
+# 5. Infra (plan padh: sirf aiforge resources, ~80 destroy)
+cd terraform/stacks/platform && terraform destroy
+# 6. (Optional, sabse aakhir) state bucket: cd ../../bootstrap && terraform destroy  (bucket khaali karna padega)
 ```
 Bachi cheezein check: Langfuse project, Infracost org, GitHub PAT (expire/revoke), Backstage ki branch `rag-app/team-beta-faq`.
 
