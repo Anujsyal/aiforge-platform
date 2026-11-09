@@ -11,6 +11,8 @@ Setup steps ke liye: [MANUAL-SETUP-GUIDE.md](../MANUAL-SETUP-GUIDE.md). Asli bui
 4. [5 flows (sabse important section)](#4-5-flows)
 5. [Har tool: kya, kyun, kisse juda, alternative](#5-har-tool-kya-kyun-kisse-juda-alternative)
 6. [Security layers (defence in depth)](#6-security-layers)
+   - 6A. [Observability deep dive](#6a-observability-deep-dive-har-tool--use-case)
+   - 6B. [Kubernetes policies](#6b-kubernetes-policies-har-layer)
 7. [Design decisions + trade-offs](#7-design-decisions--trade-offs)
 8. [Problems faced (aur fix)](#8-problems-faced-aur-fix)
 9. [Interview questions + answers](#9-interview-questions--answers)
@@ -216,6 +218,24 @@ Guardrails: Infracost (PR pe "+$X/month") · AWS Budgets (account + Project tag)
 | **Infracost** | PR mein Terraform cost diff | terraform-ci.yml | — |
 | **AWS Budgets + SNS** | Account + tag budget email | Project 1 logic | Cost Anomaly Detection |
 
+### Asli run mein aur jo tools/services kaam aaye (chhote par zaroori)
+| Tool | Kya kiya | Kab kaam aaya |
+|---|---|---|
+| **SSM Parameter Store** | k3s join token + kubeconfig (SecureString) | Phase 2: user-data mein secret nahi |
+| **IMDSv2 (hop limit 2)** | Pods (ALB controller, Kyverno ECR auth) ko node role | Phase 2/6 |
+| **ecr-credential-provider** | k3s kubelet ko ECR token (EKS mein built-in, k3s mein nahi) | Phase 4 ImagePullBackOff (#32) |
+| **flannel + kube-router** | k3s ka pod network + NetworkPolicy enforcement (REJECT, isliye turant error) | Phase 6 demos (#58), ALB SNAT (#53) |
+| **local-path provisioner** | PVCs (Vault, Loki, Postgres, Ollama models) node disk pe | Isi wajah se node replace = data loss (#72) |
+| **Kustomize** | Monitoring dashboards ConfigMap, Backstage image tag bump | Phase 7/8 |
+| **PostgreSQL** | LiteLLM (keys, teams, spend), Backstage (catalog) | Phase 3/8 |
+| **Sigstore Fulcio + Rekor** | Keyless signing ka cert + public transparency log | Phase 5 (`tlog entry created`) |
+| **CloudTrail** | IAM "not authorized" ka asli reason | Phase 5 OIDC `sub` (#49) |
+| **Cost Explorer + Pricing API** | Asli daily bill + on-demand rates (cost estimate verify) | Phase 9 |
+| **Crossplane provider-http** | Qdrant REST API (collection PUT/GET/DELETE) | Phase 8 (namespace deadlock #67) |
+| **App guardrails (Python)** | Input block, context sanitize, output redact | Phase 5 red-team 50% → 100% (#46) |
+| **fnm + corepack/yarn** | Laptop pe Node 22 + yarn 4 (Backstage create-app) | Phase 8 (#65) |
+| **pandoc (pypandoc)** | Har doc ki Word copy (`scripts/docs-to-docx.py`) | Docs |
+
 ## 6. Security layers
 
 ```
@@ -230,6 +250,110 @@ Guardrails: Infracost (PR pe "+$X/month") · AWS Budgets (account + Project tag)
 9. AI layer        System prompt (context = untrusted data), red-team tests, Langfuse review
 10. GitOps         AppProject: tenants cluster-scoped/RBAC objects aur platform ns touch nahi kar sakte
 ```
+
+## 6A. Observability deep dive (har tool + use case)
+
+Observability = 5 sawaalon ke jawab:
+
+| Sawaal | Data type | Tool |
+|---|---|---|
+| Kitna, kitni der, kitne errors? | **Metrics** | Prometheus + Grafana |
+| Kya hua, kis line pe error? | **Logs** | Loki + Alloy |
+| Ek request kahan-kahan se guzri? | **Traces** | OpenTelemetry → Langfuse |
+| LLM ne kya socha, kitne tokens? | **LLM traces** | Langfuse (LiteLLM callback) |
+| Kitna paisa laga? | **Cost** | OpenCost + LiteLLM spend |
+
+### Data ka safar
+```
+App pod (/metrics) ──scrape 30s──► Prometheus ◄── ServiceMonitor (chart banata hai)
+   │                                   │  ▲ kube-state-metrics, node-exporter, OpenCost metrics
+   │                                   ▼  │
+   │                               Grafana (dashboards + Explore) ◄── Loki
+   │ stdout logs ──► Alloy (labels: namespace, pod, container, team) ──► Loki
+   │ OTel spans (OTLP :4318) ──► OTel Collector (batch, memory_limiter, keys) ──► Langfuse
+LiteLLM ──callback (har generation)──► Langfuse          LiteLLM ──spend──► Postgres (team budgets)
+```
+
+### Har tool
+| Tool | Kya karta hai | Is project mein use case |
+|---|---|---|
+| **Prometheus** | Har 30s `/metrics` scrape, time-series store (3 din retention) | App: `rag_requests_total`, `rag_request_duration_seconds` (p50/p95), `rag_llm_tokens_total`, `rag_unanswered_total` (quality), `rag_guardrail_events_total`, `rag_retrieval_duration_seconds`; Qdrant; nodes |
+| **Prometheus Operator** | CRDs: `ServiceMonitor` (kise scrape), `PrometheusRule` (alerts/recording rules) | Chart har app ka ServiceMonitor khud banata hai; platform team ko Prometheus config nahi chhedna |
+| **kube-state-metrics** | Kubernetes objects ki halat → metrics | Pods Running/Pending, restarts, deployment replicas |
+| **node-exporter** | Har node ka CPU/memory/disk (DaemonSet) | Node bhara? (`monitoring` ns PSA privileged, isi ke liye) |
+| **Grafana** | Dashboards + Explore (Prometheus + Loki datasources) | Dashboard "AIForge / RAG apps + cost": requests/min, p95, "I don't know" ratio, error ratio, tokens/min (prompt vs completion), Qdrant p95, infra cost per namespace. Admin password Vault → ESO |
+| **PrometheusRule** | Recording rules + alerts | `RagHighLatency` (p95 > 20s), `RagGatewayErrors` (>10% errors), `RagQualityDrop` (>50% "I don't know") |
+| **Loki** | Logs store; sirf **labels** index (poora text nahi) → sasta | `{namespace="team-alpha-rag"}`, `{team="team-alpha"} \|= "error"`, `{namespace="kyverno"} \|= "verification succeeded"` |
+| **Alloy** | Log collector (Grafana Agent ka successor): pod logs Kubernetes API se, relabel, Loki ko push | `team` label pod ke `aiforge.io/team` se → team-wise logs |
+| **OpenTelemetry SDK** (app) | Spans: `POST /apps/.../ask` → `rag.ask` → httpx calls (FastAPI + httpx auto-instrumentation) | Retrieval slow hai ya LLM? Probe paths excluded; `/readyz` ke andar `suppress_instrumentation()` |
+| **OTel Collector** | OTLP receive → `memory_limiter` → `batch` → `otlphttp/langfuse` | Langfuse keys **sirf collector** ke paas (app ke paas nahi); vendor badalna = sirf collector config |
+| **Langfuse** (Cloud) | LLM traces: prompt, response, tokens, cost, latency, tags | Galat jawab → model ko kaunsa context mila? Prompt-injection monitoring; tags `team-alpha-rag`, `team:team-alpha` |
+| **LiteLLM spend** | Har call: tokens × internal price → Postgres | Team-wise LLM cost, budget enforce (exceed → app 429), showback |
+| **OpenCost** | Node price (instance-type label × AWS price) × pod requests → namespace cost; metrics Prometheus mein | Showback report, Grafana cost panel, efficiency 22.5% (rightsizing signal) |
+
+### Asli seekh
+- **Noise:** health probes ne Langfuse traces (36 mein 24 `GET`) aur Loki logs (~1.8k lines/ghanta) bhar diye. Fix: `/readyz` tracing suppress, uvicorn access-log filter, httpx WARNING (#62, #63). Instrumentation on karna aadha kaam; filter karna baaki aadha.
+- **"No data" ≠ 0:** error series exist hi nahi karti thi → `or vector(0)` (#64).
+- **Gaps (production mein):** Alertmanager band (alerts sirf Prometheus UI mein; production: Alertmanager → Slack/PagerDuty), Loki/Prometheus single replica + node disk (HA nahi), Langfuse Cloud pe prompts jaate hain (PII ho to self-host / `turn_off_message_logging`).
+
+---
+
+## 6B. Kubernetes policies (har layer)
+
+Pod banne se chalne tak:
+```
+kubectl / Argo CD ─► [1] Pod Security Admission ─► [2] Kyverno (admission) ─► pod chalta ─► [3] NetworkPolicy (runtime)
+                     [4] Argo AppProject: Git se kya, kahan deploy ho sakta hai
+```
+
+### 1. Pod Security Admission (PSA, Kubernetes built-in)
+Namespace label `pod-security.kubernetes.io/enforce=<level>`; sabse pehle chalta hai.
+
+| Level | Kya rokta hai | Kahan |
+|---|---|---|
+| **restricted** | root, privilege escalation, capabilities, seccomp missing | Tenant apps (team-alpha-rag, team-beta-faq), ai-serving |
+| **baseline** (+ warn restricted) | privileged, hostPath, host network | ai-gateway, vector-db, vault, backstage, observability, opencost (third-party images root pe) |
+| **privileged** | kuch nahi | monitoring (node-exporter ko host access) |
+
+Demo: Docker Hub nginx ko PSA ne Kyverno se **pehle** roka (#57).
+
+### 2. Kyverno (7 ClusterPolicies, 3 types)
+| Policy | Type | Kya karti hai |
+|---|---|---|
+| `verify-signed-and-evaluated-images` | **verifyImages** | Cosign keyless signature (issuer GitHub OIDC, subject = is repo ka `rag-app-ci.yml@refs/heads/main`) + eval attestation `passRate ≥ 0.8`, `redteamPassRate == 1`; digest zaruri; ECR auth node role se |
+| `restrict-image-registries` | validate | Sirf `770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/*` |
+| `block-shadow-ai` | validate | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`... env ya `api.openai.com` jaise URL → deny + message "LiteLLM gateway use karo" |
+| `require-team-labels` | validate | Pod pe `aiforge.io/team` + `aiforge.io/cost-center` (FinOps) |
+| `require-requests-limits` | validate | CPU/memory requests + memory limit |
+| `tenant-namespace-psa-restricted` | validate (Namespace) | Tenant namespace `restricted` label ke bina nahi ban sakta |
+| `generate-default-deny` | **generate** | Har tenant ns mein `default-deny-all` NetworkPolicy (existing ns mein bhi, delete karo to wapas) |
+
+Sab **Enforce** (block, sirf warn nahi), sirf `aiforge.io/tenant=true` namespaces pe. Deployment pe bhi autogen rules (pod banne se pehle hi `set env` reject). Kyverno down = tenant pods admit nahi (fail-closed). Note: `kyverno.io/v1 ClusterPolicy` deprecated; naya CEL-based `ImageValidatingPolicy` / `ValidatingPolicy`.
+
+### 3. NetworkPolicies (k3s kube-router enforce karta hai; blocked = REJECT, isliye turant error)
+| Policy | Kahan | Rule |
+|---|---|---|
+| `default-deny-all` (Kyverno) | har tenant ns | sab ingress + egress band |
+| `<app>-egress` (chart) | tenant ns | sirf DNS, LiteLLM :4000, Qdrant :6333, OTel :4318, same ns :8080. **api.openai.com, Ollama :11434 band** (shadow AI) |
+| `<app>-ingress` (chart) | tenant ns | VPC CIDR → :8080 (ALB, `externalTrafficPolicy: Local` ke saath), monitoring (scrape), same ns (ingest job) |
+| `qdrant-ingress` | vector-db | sirf tenants, crossplane-system (provider-http), monitoring |
+| `vault-ingress` | vault | sirf external-secrets (ESO) |
+| `otel-collector-ingress` | observability | tenants + platform :4317/4318, monitoring :8888 |
+
+Asli: `externalTrafficPolicy: Cluster` ka SNAT ALB traffic ko `10.42.x.0` source bana deta → ingress policy drop → 3/4 ALB targets unhealthy (#53).
+
+### 4. Baaki access controls
+| Control | Kya karta hai |
+|---|---|
+| **Argo CD AppProject `ai-apps`** | Tenant apps platform namespaces (kube-system, argocd, vault, ai-gateway, ai-serving, vector-db, kyverno, crossplane-system, monitoring, observability, backstage) mein deploy nahi; RBAC aur ResourceQuota objects nahi; cluster-scope mein sirf Namespace |
+| **AppProject `platform`** | Platform components (sirf platform team ke Git paths) |
+| **Pod securityContext** (chart) | runAsNonRoot (uid 10001), `allowPrivilegeEscalation: false`, drop ALL, seccomp RuntimeDefault, `automountServiceAccountToken: false` |
+| **Vault policy** `external-secrets-read` + Kubernetes auth role | ESO sirf `platform/*`, `teams/*` padh sakta (likh nahi); role bound to SA `external-secrets/external-secrets` |
+| **LiteLLM key scope** | Team key: sirf allowed models, max budget (30d), TPM/RPM limits |
+| **ALB `inbound-cidrs`** | Internet se sirf admin IP/32 |
+| **IAM** | Node role (SSM, ECR read, ALB policy), CI role (GitHub OIDC, sirf main branch, ECR push), Crossplane user (sirf `aiforge-vs-*` buckets) |
+
+**Gaps (imaandari se bolna):** ResourceQuota/LimitRange nahi (ek team node bhar sakti), PodDisruptionBudget nahi (self-heal bhi outage nahi rokta), NetworkPolicy FQDN-aware nahi (Cilium `toFQDNs`), node role pods ko IMDS se mil jaata (IRSA/Pod Identity nahi, k3s), Vault single node + manual unseal (production: HA Raft + KMS auto-unseal).
 
 ## 7. Design decisions + trade-offs
 

@@ -24,6 +24,8 @@ Cost: LiteLLM per-team spend · OpenCost per namespace · Infracost on PRs · AW
 ## Stack
 Terraform · AWS VPC/NAT/NACL/SG/VPC endpoints/Flow Logs/SSM/ECR/Budgets/SNS · k3s · AWS Load Balancer Controller · Ollama · LiteLLM · FastAPI · LangChain · Qdrant · Backstage · Crossplane v2 · Helm · Argo CD + ApplicationSets · GitHub Actions · promptfoo · RAGAS · Trivy · gitleaks · cosign · Kyverno · NetworkPolicies · Vault + External Secrets · Pod Security Admission · Langfuse · OpenTelemetry · Prometheus · Grafana · Loki + Alloy · OpenCost · Infracost
 
+Also used in the real run: AWS IAM (GitHub OIDC role, IMDSv2 node role), SSM Parameter Store, CloudTrail (OIDC debugging), Cost Explorer + Pricing API (cost checks) · ecr-credential-provider (k3s ↔ ECR) · flannel + kube-router (k3s CNI / NetworkPolicy) · local-path provisioner · Kustomize · PostgreSQL (LiteLLM, Backstage) · Sigstore Fulcio/Rekor (keyless signing) · Crossplane provider-http + provider-aws-s3 · Docker / docker compose · pytest · app-level guardrails · fnm + corepack/yarn (Backstage build) · pandoc (Word copies of docs)
+
 ## Repo layout
 | Path | Contents |
 |---|---|
