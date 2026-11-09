@@ -6,7 +6,7 @@
 > - Har tool ki theory, interview Q&A: [PROJECT-EXPLAINED.md](PROJECT-EXPLAINED.md)
 > - **Ye doc** = asli build ki diary (2026-11-07 se), real IDs, real errors.
 
-**Status (2026-11-09):** Phase 0-7 done ✅, Phase 8.1 (Crossplane) done (~80%). Agla: 8.2 Backstage.
+**Status (2026-11-10):** Phase 0-8 done ✅ (~88%). Agla: Phase 9 (Cost / FinOps), Phase 10 (demo + cleanup).
 
 ---
 
@@ -18,7 +18,7 @@
 5. [Roz ka kaam (operations notes)](#5-roz-ka-kaam-operations-notes)
 6. [Saari galtiyan + lessons (ek list)](#6-saari-galtiyan--lessons-ek-list)
 7. [Abhi ki state + temporary jugaad](#7-abhi-ki-state--temporary-jugaad)
-8. [Aage kya bachaa hai (Phase 8-10)](#8-aage-kya-bachaa-hai-phase-8-10)
+8. [Aage kya bachaa hai (Phase 9-10)](#8-aage-kya-bachaa-hai-phase-9-10)
 9. [Interview mein ye kahani kaise sunani hai](#9-interview-mein-ye-kahani-kaise-sunani-hai)
 
 ---
@@ -38,8 +38,8 @@ Build ka order ek ghar banane jaisa hai, neeche se upar:
  Phase 5  Quality check gate   → GitHub Actions: tests, Trivy, promptfoo eval, cosign sign
  Phase 6  Security guard       → Vault + ESO (secrets), Kyverno (sirf signed images), NetworkPolicy (no shadow AI)
  Phase 7  CCTV                 → Prometheus, Grafana, Loki, OTel, Langfuse
- ──────── yahan tak done ────────
  Phase 8  Reception desk       → Backstage (self-service form), Crossplane (VectorStore API)
+ ──────── yahan tak done ────────
  Phase 9  Bijli ka meter       → OpenCost, Infracost, showback report
  Phase 10 Demo + cleanup
 ```
@@ -370,7 +370,7 @@ Layers ek ke peeche ek: PSA (built-in) → Kyverno (admission) → NetworkPolicy
 6. **Grafana:** dashboard "AIForge / RAG apps + cost" mein asli data (p95 1.95s, tokens/min prompt vs completion, Qdrant p95). Explore → Loki `{namespace="team-alpha-rag"}` → logs. Do aur cheezein pakdi: (a) logs ka ~saara volume probe noise tha → uvicorn access filter + httpx WARNING (#63); (b) "Error ratio" `No data` kyunki error series hi nahi thi → `or vector(0)` (#64). Teeno fixes (trace noise, log noise, panel) ek hi push / ek CI run.
 7. **Asli code change pe poora loop:** push `27959de` → CI (models cached, ~7 min) quality 91.7% / red-team 100% → sign + attest → release `6-27959de` → Argo deploy `rag-app:6-27959de@sha256:8851ba72...` → Kyverno `pass` → `/ask` "Forge Watch". Idle 60s mein app logs **0 lines** (pehle ~30/min).
 
-### Phase 8: Platform layer (Crossplane + Backstage) (2026-11-09 se, chal raha hai)
+### Phase 8: Platform layer (Crossplane + Backstage) (2026-11-09/10) ✅
 
 **8.1 Crossplane VectorStore API ✅**
 
@@ -389,6 +389,31 @@ team ns: VectorStore (5 fields) ─► Composition (go-templating)
 2. Test `docs/examples/vectorstore-demo.yaml` (`vs-test` ns, rawDocsBucket true) → Qdrant `vs-demo` (768, Cosine) + ConfigMap + S3 `aiforge-vs-vs-test-vs-demo` + PAB. Pehle `READY False` (PAB bucket ka wait), phir True. `kubectl get request` khaali dikha → short name clash, `requests.http.m.crossplane.io`.
 3. **Deadlock:** `kubectl delete ns vs-test` → bucket delete hua, Qdrant collection nahi; ns hamesha Terminating. Request: `cannot apply ProviderConfigUsage ... forbidden: unable to create new content in namespace vs-test because it is being terminated`. Recovery: collection Qdrant API se DELETE (`{"result":true}`) → finalizer patch → ns gaya, leak nahi. Lesson: pehle VectorStore delete, phir namespace. (#67)
 4. team-alpha-rag: `vectorStore.create: false` hataya → Argo ne VectorStore (wave -1) banaya → provider-http ne sirf **GET** kiya (200 = exists), koi PUT nahi → existing collection **adopt**, data safe. App `AUTO_CREATE_COLLECTION=false`, `/ask` "Priya Raman" ✅. Ab team-alpha-rag ke saare temporary toggles hat gaye = pure golden path.
+
+**8.2-8.4 Backstage + golden path ✅**
+
+**Kya bana:** Backstage portal (`npx @backstage/create-app` → `backstage/app/`), image CI mein (`backstage-image.yml`, laptop RAM bachane ko), Argo app `backstage` (Postgres StatefulSet + Deployment, secrets Vault → ESO). Catalog GitHub se: `backstage/catalog/all.yaml` (system, groups, LiteLLM, API, **model catalog** = Resources `llm-model`) + glob `gitops/apps/*/catalog-info.yaml`. Template **Create RAG App** → `publish:github:pull-request` (fine-grained PAT, sirf is repo, Contents + PR RW).
+
+**Flow (golden path):**
+```
+Developer: Backstage form (name, team, model, size, budget)
+  → Scaffolder: skeleton render → PR #1 (gitops/apps/team-beta-faq/{app,values,catalog-info}.yaml)
+Platform admin: ./scripts/litellm-onboard-team.sh team-beta team-beta-faq 25 qwen2.5-0.5b  → LiteLLM team+key → Vault
+  → PR merge
+ApplicationSet (git files generator) → Argo app team-beta-faq → namespace (labels, PSA restricted)
+  → Kyverno default-deny netpol → VectorStore (Crossplane → Qdrant collection) → ExternalSecret (Vault key)
+  → Deployment (Kyverno signature+eval verify) → Ingress (shared ALB, /apps/team-beta-faq) → PostSync ingest
+Backstage catalog: glob ne team-beta-faq khud utha liya
+```
+
+**Asli run:**
+1. Laptop: Node v20.10 → `winget install Schniz.fnm` (nodejs.org ki PowerShell commands Git Bash mein chalayi to `Out-String: command not found`) → bash mein `fnm env` `.bashrc` mein, `fnm install 22`, `corepack enable` → yarn.
+2. `create-app`: ~15 min, "taking a long time" warning (Ctrl-C nahi kiya), `yarn install` + `yarn tsc` ✓. Naye create-app ne `.git` nahi banaya (rm safe). Code review: Dockerfile `node:24` vs CI Node 22 → CI 24 (#69). Commit: 57 files (yarn.lock 31k lines), node_modules nahi.
+3. `backstage-image` CI green (~10 min) → `release(backstage): 2-824612f`. PAT: `vault-patch-secret.sh platform/backstage github_token`.
+4. Argo `backstage` → Postgres + Backstage Running. Logs mein sirf harmless warnings (kubernetes plugin config missing, events backend, techdocs 0 docs). UI: `team-alpha-rag` component (owner, system, consumed LLM Gateway API, depends on LiteLLM + models, Grafana link) GitHub glob se.
+5. Form → PR #1 (3 files sahi) → onboarding script (team-beta, $25/30d, Vault) → merge → VectorStore READY, ExternalSecret Synced, pod Running + Kyverno pass... par Ingress `ADDRESS` khaali: **`conflicting tag Team: team-alpha | team-beta`** — shared ALB pe per-team tag; poore group ka reconcile ruka (#70). Fix: sirf platform tags → dono apps Healthy, same ALB.
+6. `/apps/team-beta-faq/ask` → "Forge Watch... changes every Monday" (**qwen2.5-0.5b**); team-alpha → llama3.2-1b. Do teams, alag model/key/budget/collection, ek ALB.
+7. Tunnel beech mein 2 baar toota (LiteLLM port-forward `lost connection to pod`, `6443 refused`); `tunnel.sh` auto-reconnect / restart.
 
 ---
 
@@ -421,6 +446,8 @@ Kyverno down ho to tenant pods admit nahi hote (webhook fail-closed) → start k
 | Grafana | `kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80` → localhost:3000, user `admin`, password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' \| base64 -d` |
 | Prometheus | `kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090` |
 | Langfuse | https://cloud.langfuse.com → project aiforge → Tracing |
+| Backstage | `kubectl -n backstage port-forward svc/backstage 7007:7007` → localhost:7007 → Enter as Guest |
+| Naya team app | Backstage Create → PR → `./scripts/litellm-onboard-team.sh <team> <app> 25 <model>` (LiteLLM port-forward 4000) → merge |
 | Secret badalna (ek key) | `./scripts/vault-patch-secret.sh <path> <key...>` → force-sync → consumer restart |
 
 ### Session band karna
@@ -522,14 +549,14 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 
 ---
 
-## 8. Aage kya bachaa hai (Phase 8-10)
+## 8. Aage kya bachaa hai (Phase 9-10)
 
 | Phase | Kya banega | Kisse judega |
 |---|---|---|
 | 5 CI + eval gate ✅ done | GitHub Actions: gitleaks → pytest → Trivy → promptfoo (12 quality + 6 red-team) → OIDC → ECR → cosign sign + eval attestation → release file bump | GitHub secret `AWS_CI_ROLE_ARN = arn:aws:iam::770803607362:role/aiforge-github-ci`; Argo CD naya digest uthayega |
 | 6 Security ✅ done | Vault + ESO, Kyverno (sirf signed + eval-passed images), NetworkPolicy default-deny | Phase 5 ki signatures; LiteLLM re-onboard |
 | 7 Observability ✅ done | Prometheus/Grafana, Loki/Alloy, OTel collector, Langfuse Cloud | ServiceMonitors on |
-| 8 Portal | Backstage (template → PR), Crossplane VectorStore | ApplicationSet (same jo abhi hai) |
+| 8 Portal ✅ done | Backstage (template → PR), Crossplane VectorStore | ApplicationSet (same jo abhi hai) |
 | 9 Cost | OpenCost, Infracost, showback report, Budgets | node labels (Phase 2 mein lagaye the) |
 | 10 | Demo video/screenshots, `terraform destroy` | — |
 
