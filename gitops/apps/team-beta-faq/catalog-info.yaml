@@ -1,0 +1,23 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: team-beta-faq
+  description: Internal docs Q&A assistant
+  annotations:
+    github.com/project-slug: Anujsyal/aiforge-platform
+    argocd/app-name: team-beta-faq
+    backstage.io/kubernetes-namespace: team-beta-faq
+    aiforge.io/eval-gate: promptfoo
+    aiforge.io/vectorstore: team-beta-faq
+  tags: [rag, python, fastapi]
+spec:
+  type: rag-app
+  lifecycle: experimental
+  owner: group:default/team-beta
+  system: aiforge
+  dependsOn:
+    - resource:default/llm-qwen2-5-0-5b
+    - resource:default/llm-nomic-embed-text
+    - component:default/litellm-gateway
+  consumesApis:
+    - api:default/llm-gateway-api
