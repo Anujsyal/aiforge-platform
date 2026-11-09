@@ -6,7 +6,7 @@
 > - Har tool ki theory, interview Q&A: [PROJECT-EXPLAINED.md](PROJECT-EXPLAINED.md)
 > - **Ye doc** = asli build ki diary (2026-11-07 se), real IDs, real errors.
 
-**Status (2026-11-10):** Phase 0-8 done ✅ (~88%). Agla: Phase 9 (Cost / FinOps), Phase 10 (demo + cleanup).
+**Status (2026-11-10):** Phase 0-9 done ✅ (~95%). Agla: Phase 10 (demo screenshots + cleanup).
 
 ---
 
@@ -18,7 +18,7 @@
 5. [Roz ka kaam (operations notes)](#5-roz-ka-kaam-operations-notes)
 6. [Saari galtiyan + lessons (ek list)](#6-saari-galtiyan--lessons-ek-list)
 7. [Abhi ki state + temporary jugaad](#7-abhi-ki-state--temporary-jugaad)
-8. [Aage kya bachaa hai (Phase 9-10)](#8-aage-kya-bachaa-hai-phase-9-10)
+8. [Aage kya bachaa hai (Phase 10)](#8-aage-kya-bachaa-hai-phase-10)
 9. [Interview mein ye kahani kaise sunani hai](#9-interview-mein-ye-kahani-kaise-sunani-hai)
 
 ---
@@ -39,8 +39,8 @@ Build ka order ek ghar banane jaisa hai, neeche se upar:
  Phase 6  Security guard       → Vault + ESO (secrets), Kyverno (sirf signed images), NetworkPolicy (no shadow AI)
  Phase 7  CCTV                 → Prometheus, Grafana, Loki, OTel, Langfuse
  Phase 8  Reception desk       → Backstage (self-service form), Crossplane (VectorStore API)
- ──────── yahan tak done ────────
  Phase 9  Bijli ka meter       → OpenCost, Infracost, showback report
+ ──────── yahan tak done ────────
  Phase 10 Demo + cleanup
 ```
 
@@ -415,6 +415,25 @@ Backstage catalog: glob ne team-beta-faq khud utha liya
 6. `/apps/team-beta-faq/ask` → "Forge Watch... changes every Monday" (**qwen2.5-0.5b**); team-alpha → llama3.2-1b. Do teams, alag model/key/budget/collection, ek ALB.
 7. Tunnel beech mein 2 baar toota (LiteLLM port-forward `lost connection to pod`, `6443 refused`); `tunnel.sh` auto-reconnect / restart.
 
+### Phase 9: Cost / FinOps (2026-11-10) ✅
+
+**Kya bana / kisse juda:**
+```
+LLM cost:   LiteLLM har call: tokens × internal price → team spend (Postgres) → budget cross = 422 → app 429
+Infra cost: OpenCost (node instance-type label × AWS public price) → pod requests se namespace mein baant → Prometheus metrics → Grafana panel
+Showback:   scripts/showback_report.py = LiteLLM team spend + OpenCost namespace cost (namespace label aiforge.io/team) → table + CSV
+PR guard:   Infracost (terraform-ci) → PR comment "+$X/month" + Infracost Cloud tagging policy
+Account:    AWS Budgets (account $60, Project tag $40) → SNS → email
+```
+
+**Asli run:**
+1. **Budget enforce** (`scripts/litellm-budget-demo.sh`, haath ke `$MK`/team_id curl ki jagah): team-beta budget $25 → $0.000001 → LiteLLM `Budget has been exceeded! ... Max budget: 1e-06` (code **422**) → app ne **429** "team LLM budget exceeded" → budget wapas (trap) → `/ask` 200. Spend tab tak $0.00009 (internal price; self-hosted ka vendor bill 0).
+2. **OpenCost**: install ke ~15 min baad UI: total $0.92, sabse bada `ai-serving` (Ollama 1 CPU / 3Gi request), **efficiency 22.5%** (requests >> usage = rightsizing signal). Node rate API se **$0.1008/hr m7i-flex.large** = AWS Pricing API ($0.10075) exact. (Phase 2 ke providerID + instance-type labels ki wajah se.)
+3. **Showback (24h)**: platform $0.63, shared $0.26 (unlabeled ns: argocd, kube-system, kyverno, crossplane...), team-alpha $0.03 (+ LLM $0.0039), team-beta $0.01. ~95% platform overhead = fixed cost; teams badhne pe per-team cost girta hai; chargeback mein usage ratio se baant-te.
+4. **Infracost** (secret `INFRACOST_API_KEY` = dashboard → **CLI tokens**, API tokens nahi): demo PR #2 (`agent_count` 3 → 5) → comment: **+$158/month ($393 → $551), +40%** (2 × m7i-flex $74 + gp3 $5). Job fail: Infracost Cloud trial ki example tagging policy **"FinOps tags"** (blocking) — `Service` + `Environment` (Dev/Stage/Prod) missing. Fix: provider `default_tags` mein dono → re-run green. PR close (merge nahi).
+5. **Plan ne bachaya:** tag change ka `terraform plan` → **`4 to add, 36 to change, 4 to destroy`**: `data.aws_ami most_recent` ko Canonical ki nayi Ubuntu image mili → saare nodes "must be replaced" (Vault/Ollama/Loki data node disk pe). Fix: `ignore_changes = [user_data, ami]` → `0 to add, 40 to change, 0 to destroy` → apply → instances same (launch time 9 Nov), sirf tags. Lesson: **har apply se pehle plan padho**, "sirf tag" change bhi.
+6. **Budgets**: `aiforge-project-monthly` $7.88 / $40 (Nov), account budget $0 (credits ke baad net). Purana `Monthly-5USD-Budget` $8.30 > $5 (uske alerts aaye honge). SNS subscription confirmed, test publish → MessageId.
+
 ---
 
 ## 5. Roz ka kaam (operations notes)
@@ -448,6 +467,9 @@ Kyverno down ho to tenant pods admit nahi hote (webhook fail-closed) → start k
 | Langfuse | https://cloud.langfuse.com → project aiforge → Tracing |
 | Backstage | `kubectl -n backstage port-forward svc/backstage 7007:7007` → localhost:7007 → Enter as Guest |
 | Naya team app | Backstage Create → PR → `./scripts/litellm-onboard-team.sh <team> <app> 25 <model>` (LiteLLM port-forward 4000) → merge |
+| OpenCost | `kubectl -n opencost port-forward svc/opencost 9090:9090 9003:9003` → localhost:9090 |
+| Showback | LiteLLM (4000) + OpenCost (9003) port-forward → `LITELLM_MASTER_KEY=$(kubectl -n ai-gateway get secret litellm-secrets -o jsonpath='{.data.LITELLM_MASTER_KEY}' \| base64 -d) python scripts/showback_report.py --window 24h` |
+| Kharcha (24×7) | ~$14/din (4 × m7i-flex $9.67, NAT $1.4, endpoints $1.06, ALB $0.75, EBS $0.66, IPv4 $0.36); stopped ~$4/din; Infracost baseline $393/mahina |
 | Secret badalna (ek key) | `./scripts/vault-patch-secret.sh <path> <key...>` → force-sync → consumer restart |
 
 ### Session band karna
@@ -549,7 +571,7 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 
 ---
 
-## 8. Aage kya bachaa hai (Phase 9-10)
+## 8. Aage kya bachaa hai (Phase 10)
 
 | Phase | Kya banega | Kisse judega |
 |---|---|---|
@@ -557,7 +579,7 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 | 6 Security ✅ done | Vault + ESO, Kyverno (sirf signed + eval-passed images), NetworkPolicy default-deny | Phase 5 ki signatures; LiteLLM re-onboard |
 | 7 Observability ✅ done | Prometheus/Grafana, Loki/Alloy, OTel collector, Langfuse Cloud | ServiceMonitors on |
 | 8 Portal ✅ done | Backstage (template → PR), Crossplane VectorStore | ApplicationSet (same jo abhi hai) |
-| 9 Cost | OpenCost, Infracost, showback report, Budgets | node labels (Phase 2 mein lagaye the) |
+| 9 Cost ✅ done | OpenCost, Infracost, showback report, Budgets | node labels (Phase 2 mein lagaye the) |
 | 10 | Demo video/screenshots, `terraform destroy` | — |
 
 Jaise har phase hoga, iss doc mein uska diary section add karna.

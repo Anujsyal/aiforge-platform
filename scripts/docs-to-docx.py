@@ -43,7 +43,7 @@ def main() -> None:
         pypandoc.convert_text(
             fix_tables(md.read_text(encoding="utf-8")),
             "docx",
-            format="gfm",  # GitHub markdown: tables, code blocks
+            format="gfm-tex_math_dollars",  # GitHub markdown; $ ko math mat samjho ("$0.92 ... $0.10" formula ban jaata tha)
             outputfile=str(target),
             extra_args=["--toc", "--toc-depth=2", f"--resource-path={md.parent}"],
         )

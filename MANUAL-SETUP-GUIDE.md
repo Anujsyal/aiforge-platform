@@ -1139,7 +1139,9 @@ LITELLM_MASTER_KEY=$(kubectl -n ai-gateway get secret litellm-secrets -o jsonpat
 ```
 
 ### 9.4 Infracost (PR cost diff)
-GitHub secret `INFRACOST_API_KEY` add kar. Demo PR:
+GitHub secret `INFRACOST_API_KEY` add kar: dashboard.infracost.io → Org settings → **CLI tokens** (`ico-...`; "API tokens" nahi).
+> Asli run: comment aaya (+$158/month, $393 → $551) par job fail: trial ki example tagging policy "FinOps tags" (`Service`, `Environment`). Fix: provider `default_tags` mein dono (ab code mein hai). **Tag change apply karne se pehle plan padh**: AMI drift se "4 must be replaced" aaya tha → `ignore_changes = [user_data, ami]` (ab code mein).
+ Demo PR:
 ```bash
 git checkout -b cost-demo
 sed -i 's/agent_count          = 3/agent_count          = 5/' terraform/stacks/platform/terraform.tfvars.example
