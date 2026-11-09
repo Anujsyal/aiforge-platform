@@ -6,7 +6,7 @@
 > - Har tool ki theory, interview Q&A: [PROJECT-EXPLAINED.md](PROJECT-EXPLAINED.md)
 > - **Ye doc** = asli build ki diary (2026-11-07 se), real IDs, real errors.
 
-**Status (2026-11-09):** Phase 0-4 done ✅, Phase 5 chal raha hai (~50%).
+**Status (2026-11-09):** Phase 0-5 done ✅ (~55%). Agla: Phase 6 (Vault + ESO, Kyverno, NetworkPolicy).
 
 ---
 
@@ -244,7 +244,7 @@ Har phase mein: **kya banaya → kyun → kisse juda → kya toota → lesson.**
 
 ---
 
-### Phase 5: CI + eval gate (2026-11-08 se, chal raha hai)
+### Phase 5: CI + eval gate (2026-11-08/09) ✅
 
 **Kya bana:** `.github/workflows/rag-app-ci.yml`. Har push (apps/rag-app, evals) pe:
 gitleaks → pytest → docker build → Trivy → GitHub runner pe hi Ollama + Qdrant + app (docker compose) → sample docs + poisoned doc ingest → promptfoo quality (12 sawaal) → promptfoo red-team (6 attacks) → `make_attestation.py` (quality ≥ 80% **aur** red-team = 100%?) → sirf main pe: OIDC se ECR push → cosign sign + eval attestation → `gitops/release/rag-app.yaml` mein tag + digest commit → Argo CD deploy.
@@ -286,6 +286,8 @@ Trust policy:  repo:Anujsyal/aiforge-platform:ref:refs/heads/main
 GitHub token:  repo:Anujsyal@86842727/aiforge-platform@1449398889:ref:refs/heads/main
 ```
 GitHub ab owner/repo ke permanent numeric IDs jodta hai (repo resurrection attack se bachaav). Fix: `github-oidc` module mein `github_owner_id`/`github_repo_id` (`curl https://api.github.com/repos/Anujsyal/aiforge-platform`), `terraform apply -target=module.github_oidc` (1 change). Lesson: IAM "not authorized" ka asli reason CloudTrail mein milta hai.
+
+**Pehla green run (run 42587592936, attempt 3):** quality 91.7%, red-team 100% → ECR push `5-1ddfb24@sha256:cf1032d5...` → cosign sign + eval attestation (Rekor tlog entries) → `attestation verified` → CI ka commit `release(rag-app): 5-1ddfb24 (eval passRate 0.917)` → Argo CD ne naya digest deploy kiya. Note: tab tak values.yaml mein `tag: manual-2` tha, to image `rag-app:manual-2@sha256:cf10...` dikha (digest jeet ta hai, sahi image chala, par naam bhramit karta). Isliye `manual-2` hataya → `5-1ddfb24@sha256:...`.
 
 **Setup steps:** GitHub secret `AWS_CI_ROLE_ARN = arn:aws:iam::770803607362:role/aiforge-github-ci`, Workflow permissions = Read and write. `image.tag: manual-2` CI ke pehle release commit ke **baad** hatana (pehle hataya to release file ka `0.0.0` deploy hoga = ImagePullBackOff).
 
@@ -393,7 +395,7 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 **`gitops/apps/team-alpha-rag/values.yaml` ke toggles (har phase mein ek hatana hai):**
 | Toggle | Hatao in phase |
 |---|---|
-| `image.tag: manual-2` | 5 (CI ke pehle release ke baad) |
+| ~~`image.tag: manual-2`~~ | 5 ✅ hata diya |
 | `secrets.useExternalSecret: false` | 6 |
 | `serviceMonitor.enabled: false`, `otel.enabled: false` | 7 |
 | Qdrant `metrics.serviceMonitor.enabled: false` (`30-ai.yaml`) | 7 (true karna) |

@@ -8,8 +8,7 @@ vectorStore:
 replicas: 1
 
 # ---- Phase ke hisaab se temporary overrides ----
-image:
-  tag: manual-2              # Phase 5 ke baad hata (CI release file se tag + digest aayega)
+# image: CI release file (gitops/release/rag-app.yaml) se tag + digest aata hai (Phase 5 se)
 secrets:
   useExternalSecret: false   # Phase 6 (Vault + ESO) mein hata
 serviceMonitor:

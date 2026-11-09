@@ -5,4 +5,4 @@ image:
   tag: "5-1ddfb24"
   digest: "sha256:cf1032d538e9c99038946abad437e48c91865c5e65f591a72643c880c7d696d1"
 ingress:
-  inboundCidrs: 122.161.49.234/32   # tera public IP/32 (scripts/configure.sh bharta hai)
+  inboundCidrs: 122.161.52.20/32   # tera public IP/32 (scripts/configure.sh bharta hai)
