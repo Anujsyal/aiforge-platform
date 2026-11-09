@@ -6,7 +6,7 @@
 > - Har tool ki theory, interview Q&A: [PROJECT-EXPLAINED.md](PROJECT-EXPLAINED.md)
 > - **Ye doc** = asli build ki diary (2026-11-07 se), real IDs, real errors.
 
-**Status (2026-11-09):** Phase 0-7 done ✅ (~75%). Agla: Phase 8 (Crossplane + Backstage).
+**Status (2026-11-09):** Phase 0-7 done ✅, Phase 8.1 (Crossplane) done (~80%). Agla: 8.2 Backstage.
 
 ---
 
@@ -370,6 +370,26 @@ Layers ek ke peeche ek: PSA (built-in) → Kyverno (admission) → NetworkPolicy
 6. **Grafana:** dashboard "AIForge / RAG apps + cost" mein asli data (p95 1.95s, tokens/min prompt vs completion, Qdrant p95). Explore → Loki `{namespace="team-alpha-rag"}` → logs. Do aur cheezein pakdi: (a) logs ka ~saara volume probe noise tha → uvicorn access filter + httpx WARNING (#63); (b) "Error ratio" `No data` kyunki error series hi nahi thi → `or vector(0)` (#64). Teeno fixes (trace noise, log noise, panel) ek hi push / ek CI run.
 7. **Asli code change pe poora loop:** push `27959de` → CI (models cached, ~7 min) quality 91.7% / red-team 100% → sign + attest → release `6-27959de` → Argo deploy `rag-app:6-27959de@sha256:8851ba72...` → Kyverno `pass` → `/ask` "Forge Watch". Idle 60s mein app logs **0 lines** (pehle ~30/min).
 
+### Phase 8: Platform layer (Crossplane + Backstage) (2026-11-09 se, chal raha hai)
+
+**8.1 Crossplane VectorStore API ✅**
+
+**Kya bana:** Crossplane 2.4.3 (`crossplane-system`) + packages (crossplane-contrib): `provider-aws-s3` (dependency `provider-family-aws` khud aaya), `provider-http`, `function-go-templating`, `function-auto-ready`. XRD `vectorstores.platform.aiforge.io` (Crossplane v2 **namespaced** XR, claim nahi) + Composition `vectorstore-qdrant`. AWS creds: `scripts/crossplane-aws-key.sh` → Vault → ESO → `aws-crossplane-creds` → `ClusterProviderConfig`.
+
+**Kisse juda:**
+```
+team ns: VectorStore (5 fields) ─► Composition (go-templating)
+   ├─ Request (provider-http) ─► Qdrant REST: GET (observe) / PUT (create) / DELETE (remove)   [NetworkPolicy: crossplane-system → vector-db allowed]
+   ├─ ConfigMap <name>-vectorstore (QDRANT_URL, COLLECTION, EMBED_DIM) → app
+   └─ (rawDocsBucket) Bucket + BucketPublicAccessBlock (provider-aws-s3, IAM user sirf aiforge-vs-*)
+```
+
+**Asli run:**
+1. AWS key: `crossplane-aws-key.sh` (secret kabhi screen pe nahi, sirf key ID dikhi). Crossplane + config apply → ~3 min mein providers/functions HEALTHY, XRD ESTABLISHED, ExternalSecret SecretSynced. `crossplane-config` pehle "Degraded: waiting for healthy Function" = sync waves (normal).
+2. Test `docs/examples/vectorstore-demo.yaml` (`vs-test` ns, rawDocsBucket true) → Qdrant `vs-demo` (768, Cosine) + ConfigMap + S3 `aiforge-vs-vs-test-vs-demo` + PAB. Pehle `READY False` (PAB bucket ka wait), phir True. `kubectl get request` khaali dikha → short name clash, `requests.http.m.crossplane.io`.
+3. **Deadlock:** `kubectl delete ns vs-test` → bucket delete hua, Qdrant collection nahi; ns hamesha Terminating. Request: `cannot apply ProviderConfigUsage ... forbidden: unable to create new content in namespace vs-test because it is being terminated`. Recovery: collection Qdrant API se DELETE (`{"result":true}`) → finalizer patch → ns gaya, leak nahi. Lesson: pehle VectorStore delete, phir namespace. (#67)
+4. team-alpha-rag: `vectorStore.create: false` hataya → Argo ne VectorStore (wave -1) banaya → provider-http ne sirf **GET** kiya (200 = exists), koi PUT nahi → existing collection **adopt**, data safe. App `AUTO_CREATE_COLLECTION=false`, `/ask` "Priya Raman" ✅. Ab team-alpha-rag ke saare temporary toggles hat gaye = pure golden path.
+
 ---
 
 ## 5. Roz ka kaam (operations notes)
@@ -489,7 +509,7 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 | ~~`litellm-secrets` (kubectl create)~~ | Phase 6 ✅ | Vault + ESO |
 | ~~`team-alpha-rag-secrets`~~ | Phase 6 ✅ | `useExternalSecret: true`, Vault path |
 | ~~Image `manual-2` (laptop se push)~~ | Phase 5 ✅ | CI build + sign + `release/rag-app.yaml` bump |
-| Qdrant collection (app khud banata hai) | Phase 8 | Crossplane VectorStore |
+| ~~Qdrant collection (app khud banata hai)~~ | Phase 8 ✅ | Crossplane VectorStore |
 
 **`gitops/apps/team-alpha-rag/values.yaml` ke toggles (har phase mein ek hatana hai):**
 | Toggle | Hatao in phase |
@@ -498,7 +518,7 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 | ~~`secrets.useExternalSecret: false`~~ | 6 ✅ hata diya |
 | ~~`serviceMonitor.enabled: false`, `otel.enabled: false`~~ | 7 ✅ hata diya |
 | ~~Qdrant `metrics.serviceMonitor.enabled: false`~~ | 7 ✅ true |
-| `vectorStore.create: false` | 8 |
+| ~~`vectorStore.create: false`~~ | 8 ✅ hata diya |
 
 ---
 

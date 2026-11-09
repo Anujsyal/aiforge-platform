@@ -24,8 +24,11 @@ jobs:
       run: { working-directory: backstage/app }
     steps:
       - uses: actions/checkout@v4
+      # Node version = backstage/app/packages/backend/Dockerfile ke FROM (node:24) jaisa hi hona chahiye:
+      # host pe build hue native modules (better-sqlite3) image ke Node pe chalte hain. Mismatch = pod start pe crash.
+      # Asli run (2026-11-09): create-app ne node:24 Dockerfile diya, CI 22 pe tha → code review mein pakda.
       - uses: actions/setup-node@v4
-        with: { node-version: "22" }
+        with: { node-version: "24" }
       - run: corepack enable
       - run: yarn install --immutable
       - run: yarn tsc

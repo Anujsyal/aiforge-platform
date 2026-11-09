@@ -1056,7 +1056,9 @@ Ab `gitops/apps/team-alpha-rag/values.yaml` se `vectorStore.create: false` hata 
 cd backstage
 npx @backstage/create-app@latest --path app       # naam: aiforge-portal  (5-10 min, Node 22)
 cd app
+rm -rf .git      # create-app apna git repo bana deta hai → reh gaya to parent repo ise submodule (khaali pointer) samajhta, code push hi nahi hota
 cp ../integration/app-config.production.yaml app-config.production.yaml
+cd ../.. && git status --short backstage/app | head    # files dikhni chahiye (node_modules nahi; .gitignore)
 ```
 `packages/backend/src/index.ts` mein `../integration/backend-index-additions.ts` ki 2 `backend.add(...)` lines (scorecards; optional, 8.5).
 ```bash
