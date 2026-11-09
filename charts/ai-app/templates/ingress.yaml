@@ -12,6 +12,9 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
     alb.ingress.kubernetes.io/inbound-cidrs: {{ required "ingress.inboundCidrs is required (tera IP/32)" .Values.ingress.inboundCidrs | quote }}
     alb.ingress.kubernetes.io/healthcheck-path: {{ include "ai-app.basePath" . }}/healthz
+    # externalTrafficPolicy Local: pod naye node pe jaaye to ALB jaldi pehchaane (default 15s x 5 = ~75s)
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "10"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
     alb.ingress.kubernetes.io/tags: Project=aiforge,Team={{ include "ai-app.team" . }}
     # LLM CPU pe slow hai: ALB ka default idle timeout 60s, isse 180s
     alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=180

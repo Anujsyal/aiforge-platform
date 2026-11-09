@@ -6,7 +6,7 @@
 > - Har tool ki theory, interview Q&A: [PROJECT-EXPLAINED.md](PROJECT-EXPLAINED.md)
 > - **Ye doc** = asli build ki diary (2026-11-07 se), real IDs, real errors.
 
-**Status (2026-11-09):** Phase 0-5 done ✅ (~55%). Agla: Phase 6 (Vault + ESO, Kyverno, NetworkPolicy).
+**Status (2026-11-09):** Phase 0-5 done ✅ (~55%), Phase 6 chal raha hai.
 
 ---
 
@@ -304,6 +304,23 @@ GitHub ab owner/repo ke permanent numeric IDs jodta hai (repo resurrection attac
 **Setup steps:** GitHub secret `AWS_CI_ROLE_ARN = arn:aws:iam::770803607362:role/aiforge-github-ci`, Workflow permissions = Read and write. `image.tag: manual-2` CI ke pehle release commit ke **baad** hatana (pehle hataya to release file ka `0.0.0` deploy hoga = ImagePullBackOff).
 
 **Logs kaise padhe:** promptfoo ki table Actions log mein hoti hai (`[FAIL]` wali rows). Exact numbers "Eval gate" step mein: `EVAL GATE FAILED: passRate=... redteam=...`. HTML report artifact `eval-reports` mein.
+
+---
+
+### Phase 6: Security (Vault + ESO, Kyverno, NetworkPolicy) (2026-11-09 se, chal raha hai)
+
+**Kya banega:**
+- **Vault** (`vault` ns): secrets ka source of truth. KV v2 `secret/platform/*` (LiteLLM, Langfuse, Grafana, Backstage) aur `secret/teams/<team>/<app>` (team key + ingest token).
+- **External Secrets Operator** (`external-secrets` ns): Vault se padh ke Kubernetes Secret banata hai. Vault login = Kubernetes auth (ESO ka ServiceAccount token, Vault TokenReview se verify). Read-only policy.
+- **Kyverno** (`kyverno` ns): admission pe policies. Tenant pods: sirf signed + eval-pass image (Phase 5 ki attestation), sirf ECR, koi `OPENAI_API_KEY`, labels + limits zaruri; tenant ns mein default-deny NetworkPolicy khud banata hai.
+
+**Kisse juda:** Vault ← ESO → Secrets → LiteLLM / RAG app. Kyverno → ECR (node role, IMDS) + Rekor (internet) → Phase 5 ka signature/attestation.
+
+**Shuru karne se pehle code review mein pakda (run se pehle hi fix):**
+1. **ALB: 4 mein se 3 targets unhealthy** (`aws elbv2 describe-target-health`). Service `externalTrafficPolicy: Cluster` → doosre node ka traffic SNAT hoke `10.42.x.0` source se pod tak, NetworkPolicy sirf VPC CIDR allow karti → drop. App sirf isliye chal raha tha ki pod usi node pe tha jo healthy tha. Fix: `Local` + tez health checks. (Problem #53)
+2. **`vault-init.sh` unseal key mita sakti thi** (sealed Vault + pipefail). Fix. (#54)
+3. **Secrets migration ka plan badla:** naya generate (DB reset + re-onboard) ki jagah chal rahe secrets **import** (`vault-import-existing.sh`). (#55)
+4. Crossplane ka ExternalSecret `crossplane-system` ns maangta (Phase 8 mein banta) → Crossplane folder mein shift, warna `secrets-config` atak jaata (Qdrant CRD wali problem jaisa).
 
 ---
 

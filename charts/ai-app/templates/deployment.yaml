@@ -113,6 +113,11 @@ metadata:
   labels: {{- include "ai-app.labels" . | nindent 4 }}
 spec:
   type: NodePort
+  # Local: ALB ka traffic sirf usi node pe jaata hai jahan pod hai, aur source IP (ALB, VPC CIDR) bacha rehta hai.
+  # Cluster (default) pe doosre node se aaya traffic kube-proxy SNAT karke 10.42.x.0 (flannel) source bana deta,
+  # jo NetworkPolicy (sirf VPC CIDR allow) drop karti → 4 mein se 3 ALB targets unhealthy (asli run, 2026-11-09).
+  # Pod-less nodes ALB health check fail karte hain = expected; ALB sirf pod wale node ko traffic deta hai.
+  externalTrafficPolicy: Local
   selector: {{- include "ai-app.selector" . | nindent 4 }}
   ports:
     - name: http

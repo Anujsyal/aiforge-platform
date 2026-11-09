@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Platform secrets Vault mein. Random wale khud generate; bahar wale (GitHub token, Langfuse, Crossplane AWS key) prompt se.
+# Phase 6 order: vault-init.sh → vault-import-existing.sh (LiteLLM + Langfuse + team secrets import) → ye script.
+# Import ke baad platform/litellm aur platform/langfuse "skip (exists)" dikhenge = sahi.
 # Input `read -s` se (screen pe nahi dikhta, shell history mein nahi jaata).
 # Dobara chalana SAFE: jo path pehle se Vault mein hai wo skip (warna LiteLLM master key badal jaati).
 # Overwrite karna ho: FORCE=1 ./scripts/vault-seed-secrets.sh
@@ -31,11 +33,16 @@ GH=$(ask "GitHub token (abhi nahi hai to 'later' likh; Phase 8 mein kv patch)")
 vput -mount=secret platform/backstage github_token="$GH" postgres_password="$(rnd 24)" backend_secret="$(rnd 32)"
 fi
 
-echo "== Crossplane AWS key (IAM user aiforge-crossplane → Security credentials → Create access key) =="
+echo "== Crossplane AWS key (Phase 8; IAM user aiforge-crossplane → Security credentials → Create access key) =="
+echo "   Abhi nahi chahiye to Enter dabao (skip). Long-lived key zarurat se pehle mat banao; Phase 8 mein ye script dobara chala."
 if need platform/crossplane-aws; then
-AK=$(ask "Access key ID")
-SK=$(ask "Secret access key")
-vput -mount=secret platform/crossplane-aws access_key_id="$AK" secret_access_key="$SK"
+AK=$(ask "Access key ID (Enter = skip)")
+if [[ -z "$AK" ]]; then
+  echo "  skip platform/crossplane-aws (Phase 8 mein)"
+else
+  SK=$(ask "Secret access key")
+  vput -mount=secret platform/crossplane-aws access_key_id="$AK" secret_access_key="$SK"
+fi
 fi
 
 echo

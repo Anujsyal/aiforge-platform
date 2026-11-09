@@ -848,38 +848,75 @@ Layers:
 | Prompt | system prompt + promptfoo red-team | Prompt injection, leaks |
 | Node | SSM, IMDSv2, private subnets | SSH, public exposure |
 
-### 6.1 Vault + ESO
+### 6.0 Pehle (code review mein pakde, 2026-11-09)
+Phase 6 chalane se pehle code mein ye fix hue (sab push ho chuke hone chahiye):
+- **ALB targets:** 4 mein se 3 nodes `unhealthy` the. Service `externalTrafficPolicy: Cluster` pe doosre node ka traffic SNAT hoke `10.42.x.0` source se aata, NetworkPolicy (sirf VPC CIDR) drop karti. Ab `Local`. Check: `aws elbv2 describe-target-health ...` → pod wala node `healthy`, baaki `unhealthy` (expected).
+- **vault-init.sh:** sealed Vault pe `vault status` exit 2 + `pipefail` = script dobara init karke `vault-init.json` (unseal key) mita deti. Ab nahi.
+- **Migration:** naye secrets generate karne ki jagah chal rahe manual secrets Vault mein **import** (`vault-import-existing.sh`): LiteLLM DB reset / team re-onboard ki zarurat nahi.
+- Crossplane ka ExternalSecret Phase 8 folder mein (namespace tab banta hai).
+
+### 6.1 Vault + ESO + Kyverno install
 ```bash
+cd "/e/Project 3"
 python scripts/pick-apps.py gitops/platform/10-core.yaml vault external-secrets kyverno | kubectl apply -f -
+kubectl -n argocd get app vault external-secrets kyverno      # 2-4 min: Synced
 kubectl -n vault get pods            # vault-0 0/1 Running = sealed (normal)
-./scripts/vault-init.sh              # vault-init.json banega: SAFE rakh, commit NAHI (.gitignore)
-./scripts/vault-seed-secrets.sh      # Langfuse keys, GitHub PAT (Phase 8), Crossplane AWS key maangega
+kubectl -n external-secrets get pods # 3 pods Running
+kubectl -n kyverno get pods          # 4 controllers Running
 ```
-Crossplane key: **IAM → Users → aiforge-crossplane → Security credentials → Create access key** (Terraform ne key jaan-boojh ke nahi banayi, warna secret state file mein jaata). GitHub PAT abhi nahi hai to koi bhi text de, Phase 8 mein dobara chala.
+Kyverno abhi **policies ke bina** hai, kuch block nahi karega (6.3 mein lagengi).
 
-Vault UI: `kubectl -n vault port-forward svc/vault 8200:8200` → http://localhost:8200 (root token se). `secret/platform/...` dekh.
-
-**Manual secrets → ESO pe migrate:**
+**Vault init + unseal + ESO auth:**
 ```bash
-# LiteLLM: master key Vault wali hogi (naya). Purani team key invalid ho jaayegi → 6.2 mein dobara onboard.
-kubectl -n ai-gateway delete secret litellm-secrets
+./scripts/vault-init.sh
+# → vault-init.json bani (unseal key + root token). .gitignore mein hai. Iski COPY password manager / encrypted
+#   jagah rakh. Ye gayi = Vault ka saara data gaya. Chat/screenshot mein NAHI.
+kubectl -n vault get pods            # vault-0 1/1 Running (unsealed)
+```
+
+**Chal rahe secrets Vault mein import (values screen pe nahi aati):**
+```bash
+./scripts/vault-import-existing.sh
+#  wrote secret/platform/litellm, secret/platform/langfuse, secret/teams/team-alpha/team-alpha-rag
+#  aur keys ke naam (values nahi) dikhenge
+./scripts/vault-seed-secrets.sh
+#  platform/litellm, platform/langfuse → "skip (exists)"  (import ho chuke = sahi)
+#  grafana → random
+#  GitHub token → "later" likh (Phase 8)
+#  Crossplane Access key → sirf Enter (skip; Phase 8 mein key banayenge)
+```
+Vault UI (optional): `kubectl -n vault port-forward svc/vault 8200:8200` → http://localhost:8200, login: root token (`python -c "import json;print(json.load(open('vault-init.json'))['root_token'])"`, screen pe hi dekh, kahin paste mat kar). `secret/` → `platform/`, `teams/`.
+
+**Platform secrets ESO pe (LiteLLM):**
+```bash
 python scripts/pick-apps.py gitops/platform/20-config.yaml secrets-config | kubectl apply -f -
-kubectl get externalsecret -A           # STATUS SecretSynced
-kubectl -n ai-gateway rollout restart deploy/litellm
+kubectl get clustersecretstore vault                  # READY True (ESO → Vault login chal gaya)
+kubectl -n ai-gateway delete secret litellm-secrets   # manual wala (chalta LiteLLM pod env pehle hi padh chuka)
+kubectl annotate externalsecret -A --all force-sync=$(date +%s) --overwrite
+kubectl get externalsecret -A                         # litellm-secrets, grafana-admin, otel-langfuse, backstage-secrets: SecretSynced
+kubectl -n ai-gateway get secret litellm-secrets -o jsonpath='{.metadata.ownerReferences[0].kind}'; echo   # ExternalSecret
+kubectl -n ai-gateway rollout restart deploy/litellm && kubectl -n ai-gateway rollout status deploy/litellm
 ```
-> LiteLLM DB mein purani teams/keys `LITELLM_SALT_KEY` se encrypted hain. Salt badla to purane keys toot jaate hain → simplest: postgres PVC reset (`kubectl -n ai-gateway delete sts litellm-postgres && kubectl -n ai-gateway delete pvc data-litellm-postgres-0`, Argo CD wapas bana dega) aur 6.2. Production mein salt key kabhi rotate nahi karte (Problems faced #12).
+Values same hain (import), isliye team key ab bhi valid. `SecretSyncedError` aaye to: `kubectl -n <ns> describe externalsecret <name>` (Vault path/property galat? Vault sealed?).
 
-### 6.2 Team onboarding (script se, ab Vault mein)
-```bash
-kubectl -n ai-gateway port-forward svc/litellm 4000:4000 &
-./scripts/litellm-onboard-team.sh team-alpha team-alpha-rag 25 llama3.2-1b
-kubectl -n team-alpha-rag delete secret team-alpha-rag-secrets     # manual wala
+### 6.2 Team app ka secret ESO pe
+`gitops/apps/team-alpha-rag/values.yaml` se ye 1 line hata:
+```yaml
+secrets:
+  useExternalSecret: false   # ← ye block hata
 ```
-`gitops/apps/team-alpha-rag/values.yaml` se `secrets.useExternalSecret: false` hata → push → ExternalSecret banega:
 ```bash
-kubectl -n team-alpha-rag get externalsecret,secret
+git commit -am "phase 6: team-alpha-rag secret via ESO" && git push
+# Argo CD (3 min) ExternalSecret banayega:
+kubectl -n team-alpha-rag get externalsecret
+kubectl -n team-alpha-rag delete secret team-alpha-rag-secrets        # manual wala; ESO turant naya (same values) banata hai
+kubectl -n team-alpha-rag annotate externalsecret team-alpha-rag-secrets force-sync=$(date +%s) --overwrite
+kubectl -n team-alpha-rag get externalsecret,secret                   # SecretSynced
 kubectl -n team-alpha-rag rollout restart deploy/team-alpha-rag
 ```
+**Naya team/app** (Phase 8 / Backstage ke baad) ke liye: `./scripts/litellm-onboard-team.sh <team> <app> 25 llama3.2-1b` (LiteLLM port-forward 4000 chalu ho). Ye team + key banata hai aur seedha Vault `secret/teams/<team>/<app>` mein likhta hai.
+
+> LiteLLM DB ki keys `LITELLM_SALT_KEY` se encrypted hain: salt kabhi rotate/regenerate mat kar (Problems faced #12). Isliye import, generate nahi.
 
 ### 6.3 Kyverno policies
 ```bash

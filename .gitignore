@@ -30,3 +30,4 @@ evals/.promptfoo/
 backstage/app/node_modules/
 backstage/app/dist-types/
 backstage/app/packages/*/dist/
+vault-init.json.tmp
