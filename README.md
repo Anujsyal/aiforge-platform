@@ -16,6 +16,7 @@ Cost: LiteLLM per-team spend · OpenCost per namespace · Infracost on PRs · AW
 ```
 
 ## Docs
+(Word copies: `docs/word/*.docx`, `python scripts/docs-to-docx.py` se regenerate)
 - **[MANUAL-SETUP-GUIDE.md](MANUAL-SETUP-GUIDE.md)**: phase-by-phase build (manual + code), troubleshooting, cleanup
 - **[docs/PROJECT-EXPLAINED.md](docs/PROJECT-EXPLAINED.md)**: how it works, tool connections, design trade-offs, problems, interview Q&A
 - **[docs/BUILD-JOURNEY.md](docs/BUILD-JOURNEY.md)**: the real build diary: order of work, how the pieces connect, every error hit and its fix, day-to-day operations
