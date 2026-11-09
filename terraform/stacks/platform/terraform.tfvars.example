@@ -13,7 +13,7 @@ alert_emails = ["<your-email>"]
 # Paid account: server t3.large + 2 × t3.xlarge bhi chalega.
 server_instance_type = "m7i-flex.large"
 agent_instance_type  = "m7i-flex.large"
-agent_count          = 3
+agent_count          = 5
 agents_use_spot      = false   # Free plan pe spot mat use kar
 
 # Kharcha bachana ho to [] kar de (ECR pulls NAT se jayenge)
