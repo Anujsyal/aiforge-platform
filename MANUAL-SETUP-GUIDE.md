@@ -1031,21 +1031,23 @@ python scripts/pick-apps.py gitops/platform/20-config.yaml crossplane-config | k
 kubectl get providers,functions        # INSTALLED True, HEALTHY True (2-4 min)
 kubectl get xrd                        # vectorstores.platform.aiforge.io ESTABLISHED
 ```
-Manual test:
+Manual test (YAML file mein hai; lamba heredoc paste Git Bash mein toot-ta hai):
 ```bash
 kubectl create ns vs-test
-cat <<'EOF' | kubectl apply -f -
-apiVersion: platform.aiforge.io/v1alpha1
-kind: VectorStore
-metadata: { name: demo, namespace: vs-test }
-spec: { collectionName: vs-demo, dimension: 768, team: team-alpha, rawDocsBucket: true }
-EOF
-kubectl -n vs-test get vectorstore demo -w          # SYNCED True, READY True
-kubectl -n vs-test get request,bucket,configmap     # composed resources
-curl -s localhost:6333/collections                  # vs-demo (Qdrant port-forward)
-aws s3 ls | grep aiforge-vs                         # bucket
-kubectl delete ns vs-test                           # collection + bucket bhi delete (Crossplane lifecycle)
+kubectl apply -f docs/examples/vectorstore-demo.yaml
+kubectl -n vs-test get vectorstore demo                 # 1-2 min: SYNCED True, READY True (PAB bucket ka wait karta hai: normal)
+kubectl -n vs-test get requests.http.m.crossplane.io,bucket,bucketpublicaccessblock,configmap
+#   NOTE: `kubectl get request` short name kisi aur resource se takrata hai → poora naam likh
+aws s3 ls | grep aiforge-vs                             # bucket
 ```
+**Delete ka order (asli run mein deadlock hua):** pehle VectorStore, phir namespace:
+```bash
+kubectl -n vs-test delete vectorstore demo              # collection DELETE + bucket delete (Crossplane)
+kubectl -n vs-test get requests.http.m.crossplane.io    # khaali hone tak ruk
+kubectl delete ns vs-test
+```
+> Seedha `kubectl delete ns` kiya to: namespace Terminating → provider-http DELETE se pehle `ProviderConfigUsage` banana chahta → `forbidden: namespace is being terminated` → collection kabhi delete nahi, namespace hamesha Terminating. Recovery: collection khud DELETE (Qdrant API) → `kubectl -n vs-test patch requests.http.m.crossplane.io <name> --type=merge -p '{"metadata":{"finalizers":[]}}'`. Finalizer hatana = leak ka risk, isliye pehle resource khud saaf.
+
 Ab `gitops/apps/team-alpha-rag/values.yaml` se `vectorStore.create: false` hata → push. App ka collection ab Crossplane manage karega (`AUTO_CREATE_COLLECTION=false`).
 
 ### 8.2 Backstage app banana (laptop, ek baar)

@@ -1,0 +1,16 @@
+# Phase 8.1 manual test: self-service VectorStore API (Crossplane).
+#   kubectl create ns vs-test
+#   kubectl apply -f docs/examples/vectorstore-demo.yaml
+#   kubectl -n vs-test get vectorstore demo -w      # SYNCED True, READY True
+#   kubectl delete ns vs-test                       # collection + bucket bhi delete (Crossplane lifecycle)
+# Team ko sirf ye 5 fields pata hone chahiye. Qdrant/S3/IAM ka kuch nahi.
+apiVersion: platform.aiforge.io/v1alpha1
+kind: VectorStore
+metadata:
+  name: demo
+  namespace: vs-test
+spec:
+  collectionName: vs-demo
+  dimension: 768
+  team: team-alpha
+  rawDocsBucket: true      # private S3 bucket bhi (aiforge-vs-vs-test-vs-demo)
