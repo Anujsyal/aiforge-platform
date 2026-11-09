@@ -6,7 +6,7 @@
 > - Har tool ki theory, interview Q&A: [PROJECT-EXPLAINED.md](PROJECT-EXPLAINED.md)
 > - **Ye doc** = asli build ki diary (2026-11-07 se), real IDs, real errors.
 
-**Status (2026-11-09):** Phase 0-6 done ✅, Phase 7 lagbhag done (~72%).
+**Status (2026-11-09):** Phase 0-7 done ✅ (~75%). Agla: Phase 8 (Crossplane + Backstage).
 
 ---
 
@@ -18,7 +18,7 @@
 5. [Roz ka kaam (operations notes)](#5-roz-ka-kaam-operations-notes)
 6. [Saari galtiyan + lessons (ek list)](#6-saari-galtiyan--lessons-ek-list)
 7. [Abhi ki state + temporary jugaad](#7-abhi-ki-state--temporary-jugaad)
-8. [Aage kya bachaa hai (Phase 7-10)](#8-aage-kya-bachaa-hai-phase-7-10)
+8. [Aage kya bachaa hai (Phase 8-10)](#8-aage-kya-bachaa-hai-phase-8-10)
 9. [Interview mein ye kahani kaise sunani hai](#9-interview-mein-ye-kahani-kaise-sunani-hai)
 
 ---
@@ -37,8 +37,8 @@ Build ka order ek ghar banane jaisa hai, neeche se upar:
  Phase 4  Pehla kiraayedaar    → RAG app (FastAPI) → ECR image → team key → ALB pe live → GitOps (ApplicationSet)
  Phase 5  Quality check gate   → GitHub Actions: tests, Trivy, promptfoo eval, cosign sign
  Phase 6  Security guard       → Vault + ESO (secrets), Kyverno (sirf signed images), NetworkPolicy (no shadow AI)
- ──────── yahan tak done ────────
  Phase 7  CCTV                 → Prometheus, Grafana, Loki, OTel, Langfuse
+ ──────── yahan tak done ────────
  Phase 8  Reception desk       → Backstage (self-service form), Crossplane (VectorStore API)
  Phase 9  Bijli ka meter       → OpenCost, Infracost, showback report
  Phase 10 Demo + cleanup
@@ -345,7 +345,7 @@ Layers ek ke peeche ek: PSA (built-in) → Kyverno (admission) → NetworkPolicy
 
 ---
 
-### Phase 7: Observability (Prometheus, Grafana, Loki, OTel, Langfuse) (2026-11-09)
+### Phase 7: Observability (Prometheus, Grafana, Loki, OTel, Langfuse) (2026-11-09) ✅
 
 **Kya bana:**
 - **kube-prometheus-stack** (`monitoring`): Prometheus (3 din retention), Grafana (admin password Vault → ESO), operator, kube-state-metrics, node-exporter (har node). etcd/scheduler/controller-manager/proxy band (k3s mein ek binary).
@@ -368,6 +368,7 @@ Layers ek ke peeche ek: PSA (built-in) → Kyverno (admission) → NetworkPolicy
 4. Check: Prometheus targets sab `up` (team-alpha-rag, qdrant-headless, kubelet 12, node-exporter 4...), `rag_requests_total` aa raha, Loki mein 11 namespaces + `team="team-alpha"` label.
 5. **Langfuse mein noise:** 36 traces mein 24 sirf `GET`. Wajah: kubelet readiness probe `/readyz` har 10s; `/readyz` khud trace se excluded tha par uske andar ka Qdrant `httpx GET` alag **root** trace ban raha tha (~8.6k/din → Hobby quota 5-6 din mein khatam, asli traces dab jaate). Fix: `/readyz` mein `suppress_instrumentation()` (`telemetry.untraced()`), test add. Ye app change push = poora CI → eval → sign → release → Argo → Kyverno loop dobara.
 6. **Grafana:** dashboard "AIForge / RAG apps + cost" mein asli data (p95 1.95s, tokens/min prompt vs completion, Qdrant p95). Explore → Loki `{namespace="team-alpha-rag"}` → logs. Do aur cheezein pakdi: (a) logs ka ~saara volume probe noise tha → uvicorn access filter + httpx WARNING (#63); (b) "Error ratio" `No data` kyunki error series hi nahi thi → `or vector(0)` (#64). Teeno fixes (trace noise, log noise, panel) ek hi push / ek CI run.
+7. **Asli code change pe poora loop:** push `27959de` → CI (models cached, ~7 min) quality 91.7% / red-team 100% → sign + attest → release `6-27959de` → Argo deploy `rag-app:6-27959de@sha256:8851ba72...` → Kyverno `pass` → `/ask` "Forge Watch". Idle 60s mein app logs **0 lines** (pehle ~30/min).
 
 ---
 
@@ -501,13 +502,13 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 
 ---
 
-## 8. Aage kya bachaa hai (Phase 7-10)
+## 8. Aage kya bachaa hai (Phase 8-10)
 
 | Phase | Kya banega | Kisse judega |
 |---|---|---|
 | 5 CI + eval gate ✅ done | GitHub Actions: gitleaks → pytest → Trivy → promptfoo (12 quality + 6 red-team) → OIDC → ECR → cosign sign + eval attestation → release file bump | GitHub secret `AWS_CI_ROLE_ARN = arn:aws:iam::770803607362:role/aiforge-github-ci`; Argo CD naya digest uthayega |
 | 6 Security ✅ done | Vault + ESO, Kyverno (sirf signed + eval-passed images), NetworkPolicy default-deny | Phase 5 ki signatures; LiteLLM re-onboard |
-| 7 Observability | Prometheus/Grafana, Loki/Alloy, OTel collector, Langfuse Cloud | ServiceMonitors on |
+| 7 Observability ✅ done | Prometheus/Grafana, Loki/Alloy, OTel collector, Langfuse Cloud | ServiceMonitors on |
 | 8 Portal | Backstage (template → PR), Crossplane VectorStore | ApplicationSet (same jo abhi hai) |
 | 9 Cost | OpenCost, Infracost, showback report, Budgets | node labels (Phase 2 mein lagaye the) |
 | 10 | Demo video/screenshots, `terraform destroy` | — |
