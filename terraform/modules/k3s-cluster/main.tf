@@ -181,8 +181,11 @@ resource "aws_instance" "server" {
 
   # User-data sirf PEHLE boot pe chalta hai. Template badalne pe Terraform instances REPLACE karta
   # (= poora cluster delete). Isliye ignore: chalte nodes ko scripts/ se patch karo, naye nodes naya template lenge.
+  # ami bhi: data.aws_ami most_recent → Canonical nayi Ubuntu image release kare to har plan "4 must be replaced"
+  # (asli run 2026-11-10: sirf tag badalne pe plan ne poora cluster replace karna chaha; Vault/Ollama/Loki data
+  # node disk pe hai). OS patches apt/unattended-upgrades se; AMI upgrade = planned node replacement.
   lifecycle {
-    ignore_changes = [user_data]
+    ignore_changes = [user_data, ami]
   }
 
   tags = {
@@ -237,8 +240,11 @@ resource "aws_instance" "agent" {
 
   # User-data sirf PEHLE boot pe chalta hai. Template badalne pe Terraform instances REPLACE karta
   # (= poora cluster delete). Isliye ignore: chalte nodes ko scripts/ se patch karo, naye nodes naya template lenge.
+  # ami bhi: data.aws_ami most_recent → Canonical nayi Ubuntu image release kare to har plan "4 must be replaced"
+  # (asli run 2026-11-10: sirf tag badalne pe plan ne poora cluster replace karna chaha; Vault/Ollama/Loki data
+  # node disk pe hai). OS patches apt/unattended-upgrades se; AMI upgrade = planned node replacement.
   lifecycle {
-    ignore_changes = [user_data]
+    ignore_changes = [user_data, ami]
   }
 
   tags = {

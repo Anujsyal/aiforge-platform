@@ -32,6 +32,9 @@ provider "aws" {
       ManagedBy  = "terraform"
       Stack      = "platform"
       CostCenter = "platform-team"
+      # Infracost tagging policy "FinOps tags" (asli PR #2): har resource pe Service + Environment (Dev/Stage/Prod)
+      Service     = "aiforge-platform"
+      Environment = "Dev"
     }
   }
 }
