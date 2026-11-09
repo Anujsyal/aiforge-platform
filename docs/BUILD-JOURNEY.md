@@ -6,7 +6,7 @@
 > - Har tool ki theory, interview Q&A: [PROJECT-EXPLAINED.md](PROJECT-EXPLAINED.md)
 > - **Ye doc** = asli build ki diary (2026-11-07 se), real IDs, real errors.
 
-**Status (2026-11-10):** Saare phases (0-10) done ✅. 24 Argo apps Healthy, 2 tenant apps live. Bacha: screenshots + jab chahe `terraform destroy`.
+**Status (2026-11-10):** Saare phases (0-10) done ✅, phir **destroy** (sirf Terraform state bucket rakha). Saboot: [screenshots/](screenshots/) + [evidence/](evidence/). Dobara banana ho to MANUAL-SETUP-GUIDE (~2-3 ghante).
 
 ---
 
@@ -486,6 +486,8 @@ for k in $(aws iam list-access-keys --user-name aiforge-crossplane --query 'Acce
 cd terraform/stacks/platform && terraform destroy
 # 6. (Optional, sabse aakhir) state bucket: cd ../../bootstrap && terraform destroy  (bucket khaali karna padega)
 ```
+**Asli destroy (2026-11-10):** order upar wala → `terraform destroy` → check: EC2 terminated, VPC NotFound, NAT deleted, ALB/EIP/endpoints/ECR/IAM/SSM/SNS/Budgets/log group sab gaye, `Project=aiforge` cost 10 Nov $0. State bucket rakha. (Account ke 3 × 1 GB loose EBS volumes Project 1 `finops-showback` ke hain, is project ke nahi.)
+
 Bachi cheezein check: Langfuse project, Infracost org, GitHub PAT (expire/revoke), Backstage ki branch `rag-app/team-beta-faq`.
 
 ---
