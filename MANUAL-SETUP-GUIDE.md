@@ -891,7 +891,8 @@ Vault UI (optional): `kubectl -n vault port-forward svc/vault 8200:8200` → htt
 ```bash
 python scripts/pick-apps.py gitops/platform/20-config.yaml secrets-config | kubectl apply -f -
 kubectl get clustersecretstore vault                  # READY True (ESO → Vault login chal gaya)
-kubectl -n ai-gateway delete secret litellm-secrets   # manual wala (chalta LiteLLM pod env pehle hi padh chuka)
+# Asli run: ESO ne existing manual Secret khud adopt kar liya (owner ExternalSecret, label managed=true) → delete ki zarurat nahi.
+# Adopt na ho (SecretSyncedError) tabhi: kubectl -n ai-gateway delete secret litellm-secrets
 kubectl annotate externalsecret -A --all force-sync=$(date +%s) --overwrite
 kubectl get externalsecret -A                         # litellm-secrets, grafana-admin, otel-langfuse, backstage-secrets: SecretSynced
 kubectl -n ai-gateway get secret litellm-secrets -o jsonpath='{.metadata.ownerReferences[0].kind}'; echo   # ExternalSecret
@@ -909,7 +910,7 @@ secrets:
 git commit -am "phase 6: team-alpha-rag secret via ESO" && git push
 # Argo CD (3 min) ExternalSecret banayega:
 kubectl -n team-alpha-rag get externalsecret
-kubectl -n team-alpha-rag delete secret team-alpha-rag-secrets        # manual wala; ESO turant naya (same values) banata hai
+# ESO manual Secret adopt kar leta hai (asli run). Push ke 3 min baad check kar, turant nahi (Argo sync).
 kubectl -n team-alpha-rag annotate externalsecret team-alpha-rag-secrets force-sync=$(date +%s) --overwrite
 kubectl -n team-alpha-rag get externalsecret,secret                   # SecretSynced
 kubectl -n team-alpha-rag rollout restart deploy/team-alpha-rag
@@ -931,9 +932,9 @@ kubectl -n team-alpha-rag get networkpolicy   # default-deny-all (Kyverno genera
 ```bash
 kubectl -n team-alpha-rag run bad --image=$REG/aiforge/rag-app:manual-1 --restart=Never \
   --overrides='{"metadata":{"labels":{"aiforge.io/team":"team-alpha","aiforge.io/cost-center":"x"}}}'
-# → admission webhook denied: verify-signed-and-evaluated-images ... (tag-only / no signature)
+# Asli: verify-signed-and-evaluated-images: '... rag-app:manual-1: .attestors[0].entries[0].keyless: no signatures found'
 ```
-**b) Docker Hub image block:** `kubectl -n team-alpha-rag run nginx --image=nginx` → `restrict-image-registries`.
+**b) Docker Hub image block:** `kubectl -n team-alpha-rag run nginx --image=nginx --restart=Never --dry-run=server` → pehle **PSA** rokta hai (root). Kyverno dekhne ke liye PSA-compliant: `--overrides='{"apiVersion":"v1","spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":101,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"nginx","image":"nginx","securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'` → `restrict-image-registries` + `require-team-labels` + `require-requests-limits`.
 
 **c) Shadow AI env block:**
 ```bash
@@ -944,12 +945,12 @@ kubectl -n team-alpha-rag set env deploy/team-alpha-rag OPENAI_API_KEY=sk-test -
 ```bash
 kubectl -n team-alpha-rag exec deploy/team-alpha-rag -- python -c \
  "import urllib.request;urllib.request.urlopen('https://api.openai.com/v1/models',timeout=5)"
-# → TimeoutError / URLError (egress band)
+# → URLError [Errno 101] Network is unreachable (k3s kube-router REJECT karta hai; timeout bhi ho sakta = dono blocked)
 kubectl -n team-alpha-rag exec deploy/team-alpha-rag -- python -c \
  "import urllib.request;print(urllib.request.urlopen('http://litellm.ai-gateway.svc.cluster.local:4000/health/liveliness',timeout=5).read())"
 # → OK (gateway allowed)
 ```
-**e) Pod se Ollama seedha:** `...urlopen('http://ollama.ai-serving.svc.cluster.local:11434/api/tags',timeout=5)` → timeout (sirf gateway Ollama tak).
+**e) Pod se Ollama seedha:** `...urlopen('http://ollama.ai-serving.svc.cluster.local:11434/api/tags',timeout=5)` → `Connection refused` (asli run; sirf gateway Ollama tak).
 
 **f) PSA:** `kubectl -n team-alpha-rag run root --image=$REF --overrides='{"spec":{"securityContext":{"runAsUser":0}}}'` → `violates PodSecurity "restricted"` (ya Kyverno pehle rokega).
 

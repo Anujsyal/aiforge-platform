@@ -6,7 +6,7 @@
 > - Har tool ki theory, interview Q&A: [PROJECT-EXPLAINED.md](PROJECT-EXPLAINED.md)
 > - **Ye doc** = asli build ki diary (2026-11-07 se), real IDs, real errors.
 
-**Status (2026-11-09):** Phase 0-5 done ✅ (~55%), Phase 6 chal raha hai.
+**Status (2026-11-09):** Phase 0-6 done ✅ (~65%). Agla: Phase 7 (Observability).
 
 ---
 
@@ -18,7 +18,7 @@
 5. [Roz ka kaam (operations notes)](#5-roz-ka-kaam-operations-notes)
 6. [Saari galtiyan + lessons (ek list)](#6-saari-galtiyan--lessons-ek-list)
 7. [Abhi ki state + temporary jugaad](#7-abhi-ki-state--temporary-jugaad)
-8. [Aage kya bachaa hai (Phase 6-10)](#8-aage-kya-bachaa-hai-phase-6-10)
+8. [Aage kya bachaa hai (Phase 7-10)](#8-aage-kya-bachaa-hai-phase-7-10)
 9. [Interview mein ye kahani kaise sunani hai](#9-interview-mein-ye-kahani-kaise-sunani-hai)
 
 ---
@@ -36,8 +36,8 @@ Build ka order ek ghar banane jaisa hai, neeche se upar:
  Phase 3  Bijli-paani          → Ollama (models), LiteLLM (gateway: keys, budget), Qdrant (vector DB)
  Phase 4  Pehla kiraayedaar    → RAG app (FastAPI) → ECR image → team key → ALB pe live → GitOps (ApplicationSet)
  Phase 5  Quality check gate   → GitHub Actions: tests, Trivy, promptfoo eval, cosign sign
- ──────── yahan tak done ────────
  Phase 6  Security guard       → Vault + ESO (secrets), Kyverno (sirf signed images), NetworkPolicy (no shadow AI)
+ ──────── yahan tak done ────────
  Phase 7  CCTV                 → Prometheus, Grafana, Loki, OTel, Langfuse
  Phase 8  Reception desk       → Backstage (self-service form), Crossplane (VectorStore API)
  Phase 9  Bijli ka meter       → OpenCost, Infracost, showback report
@@ -307,9 +307,30 @@ GitHub ab owner/repo ke permanent numeric IDs jodta hai (repo resurrection attac
 
 ---
 
-### Phase 6: Security (Vault + ESO, Kyverno, NetworkPolicy) (2026-11-09 se, chal raha hai)
+### Phase 6: Security (Vault + ESO, Kyverno, NetworkPolicy) (2026-11-09) ✅
 
-**Kya banega:**
+**Asli run:**
+1. `vault`, `external-secrets`, `kyverno` Argo apps → Synced. `vault-0 0/1` = sealed (normal).
+2. `vault-init.sh` → init + unseal + KV v2 + Kubernetes auth + read-only policy + role. Dobara chalane pe ek baar `vault status nahi mila` (tunnel ka pal bhar ka glitch); naya script us pe ruk gaya, kuch nahi mitaya. Re-run: `already initialized / Already unsealed`. Warning `role has no audience` = lab mein ok (production: audience set).
+3. `vault-import-existing.sh` → `platform/litellm`, `platform/langfuse`, `teams/team-alpha/team-alpha-rag` (sirf key names print). `vault-seed-secrets.sh` → grafana random, backstage `later`, crossplane skip.
+4. `secrets-config` → ClusterSecretStore `Valid/READY True`; 4 ExternalSecrets `SecretSynced`. **ESO ne existing manual `litellm-secrets` khud adopt kar liya** (ownerReference ExternalSecret + label `reconcile.external-secrets.io/managed=true`), delete ki zarurat nahi padi. Values same (import) → LiteLLM restart, team key valid.
+5. `useExternalSecret: false` hataya → Argo ne ExternalSecret banaya → team secret bhi adopt → `/ask` "Forge Watch" ✅.
+6. `kyverno-policies` + `platform-network-policies` → 7 ClusterPolicies `READY True`, `default-deny-all` Kyverno ne generate ki. Warning: `kyverno.io/v1 ClusterPolicy is deprecated` (naye CEL `ImageValidatingPolicy`/`ValidatingPolicy` aa rahe; abhi kaam karta hai).
+7. **App restart → Kyverno ne verify karke admit kiya.** Pod annotation `kyverno.io/verify-images: {"...rag-app@sha256:cf10...":"pass"}`, admission log `image attestations verification succeeded`.
+
+**Demos (screenshots):**
+| Demo | Kya kiya | Kisne roka | Message |
+|---|---|---|---|
+| a | Laptop wala `rag-app:manual-1` pod | Kyverno `verify-signed-and-evaluated-images` | `no signatures found` |
+| b | `nginx` (Docker Hub) | Pehle **PSA restricted** (root, caps, seccomp). PSA-compliant banaya to Kyverno: `restrict-image-registries` + `require-team-labels` + `require-requests-limits` ek saath | `Tenant images must come from ...ecr.../aiforge/` |
+| c | `set env OPENAI_API_KEY=sk-test` (dry-run=server) | Kyverno `block-shadow-ai` (Deployment pe autogen rule) | `Direct external AI provider access is not allowed. Use the LiteLLM gateway...` |
+| d | Pod → `https://api.openai.com` | NetworkPolicy (default-deny egress) | `[Errno 101] Network is unreachable` (kube-router REJECT karta hai, isliye timeout nahi) |
+| d | Pod → LiteLLM `/health/liveliness` | allowed | `"I'm alive!"` |
+| e | Pod → Ollama seedha `:11434` | NetworkPolicy | `Connection refused` (Ollama chal raha hai; sirf gateway allowed) |
+
+Layers ek ke peeche ek: PSA (built-in) → Kyverno (admission) → NetworkPolicy (runtime) → LiteLLM key/budget (app). Ek layer chhoote to agli pakadti hai.
+
+**Kya bana:**
 - **Vault** (`vault` ns): secrets ka source of truth. KV v2 `secret/platform/*` (LiteLLM, Langfuse, Grafana, Backstage) aur `secret/teams/<team>/<app>` (team key + ingest token).
 - **External Secrets Operator** (`external-secrets` ns): Vault se padh ke Kubernetes Secret banata hai. Vault login = Kubernetes auth (ESO ka ServiceAccount token, Vault TokenReview se verify). Read-only policy.
 - **Kyverno** (`kyverno` ns): admission pe policies. Tenant pods: sirf signed + eval-pass image (Phase 5 ki attestation), sirf ECR, koi `OPENAI_API_KEY`, labels + limits zaruri; tenant ns mein default-deny NetworkPolicy khud banata hai.
@@ -337,6 +358,15 @@ cd "/e/Project 3" && ./scripts/tunnel.sh
 kubectl get nodes          # 4 Ready
 kubectl -n argocd get applications
 ```
+
+### Vault (Phase 6 se) — har start ke baad
+Instance stop/start = Vault **sealed** → ESO naye secrets sync nahi karta (purane Secrets bane rehte hain, apps chalti rehti hain).
+```bash
+kubectl -n vault get pods            # 0/1 = sealed
+./scripts/vault-unseal.sh            # vault-init.json se
+```
+`vault-init.json` (unseal key + root token) = Vault ki chaabi. Backup rakh, kabhi share/screenshot nahi. VS Code mein khuli mat chhod.
+Kyverno down ho to tenant pods admit nahi hote (webhook fail-closed) → start ke baad pehle `kubectl -n kyverno get pods`.
 
 ### Session band karna
 ```bash
@@ -421,8 +451,8 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 **Manual cheezein (baad mein automate hongi):**
 | Abhi manual | Kab automate | Kaise |
 |---|---|---|
-| `litellm-secrets` (kubectl create) | Phase 6 | Vault + ESO |
-| `team-alpha-rag-secrets` | Phase 6 | `useExternalSecret: true`, Vault path |
+| ~~`litellm-secrets` (kubectl create)~~ | Phase 6 ✅ | Vault + ESO |
+| ~~`team-alpha-rag-secrets`~~ | Phase 6 ✅ | `useExternalSecret: true`, Vault path |
 | ~~Image `manual-2` (laptop se push)~~ | Phase 5 ✅ | CI build + sign + `release/rag-app.yaml` bump |
 | Qdrant collection (app khud banata hai) | Phase 8 | Crossplane VectorStore |
 
@@ -430,19 +460,19 @@ Stop karne pe bhi kharcha: NAT Gateway (~$1.3/din), ALB, EBS, ECR endpoints. Lam
 | Toggle | Hatao in phase |
 |---|---|
 | ~~`image.tag: manual-2`~~ | 5 ✅ hata diya |
-| `secrets.useExternalSecret: false` | 6 |
+| ~~`secrets.useExternalSecret: false`~~ | 6 ✅ hata diya |
 | `serviceMonitor.enabled: false`, `otel.enabled: false` | 7 |
 | Qdrant `metrics.serviceMonitor.enabled: false` (`30-ai.yaml`) | 7 (true karna) |
 | `vectorStore.create: false` | 8 |
 
 ---
 
-## 8. Aage kya bachaa hai (Phase 6-10)
+## 8. Aage kya bachaa hai (Phase 7-10)
 
 | Phase | Kya banega | Kisse judega |
 |---|---|---|
 | 5 CI + eval gate ✅ done | GitHub Actions: gitleaks → pytest → Trivy → promptfoo (12 quality + 6 red-team) → OIDC → ECR → cosign sign + eval attestation → release file bump | GitHub secret `AWS_CI_ROLE_ARN = arn:aws:iam::770803607362:role/aiforge-github-ci`; Argo CD naya digest uthayega |
-| 6 Security | Vault + ESO, Kyverno (sirf signed + eval-passed images), NetworkPolicy default-deny | Phase 5 ki signatures; LiteLLM re-onboard |
+| 6 Security ✅ done | Vault + ESO, Kyverno (sirf signed + eval-passed images), NetworkPolicy default-deny | Phase 5 ki signatures; LiteLLM re-onboard |
 | 7 Observability | Prometheus/Grafana, Loki/Alloy, OTel collector, Langfuse Cloud | ServiceMonitors on |
 | 8 Portal | Backstage (template → PR), Crossplane VectorStore | ApplicationSet (same jo abhi hai) |
 | 9 Cost | OpenCost, Infracost, showback report, Budgets | node labels (Phase 2 mein lagaye the) |
