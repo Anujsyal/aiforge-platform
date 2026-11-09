@@ -15,6 +15,16 @@ data "aws_iam_openid_connect_provider" "github" {
 }
 
 locals {
+  # GitHub ab sub claim mein owner/repo ke numeric IDs bhi bhejta hai (asli run, 2026-11-09, CloudTrail se pakda):
+  #   repo:Anujsyal@86842727/aiforge-platform@1449398889:ref:refs/heads/main
+  # Fayda: repo delete karke same naam se naya banaya ("repo resurrection") to uske IDs alag honge → role nahi milega.
+  # IDs diye hain to sirf naya format, warna purana (naam wala) format.
+  owner = split("/", var.github_repo)[0]
+  repo  = split("/", var.github_repo)[1]
+  main_sub = var.github_owner_id != "" && var.github_repo_id != "" ? (
+    "repo:${local.owner}@${var.github_owner_id}/${local.repo}@${var.github_repo_id}:ref:refs/heads/main"
+  ) : "repo:${var.github_repo}:ref:refs/heads/main"
+
   oidc_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
 }
 
@@ -34,7 +44,7 @@ data "aws_iam_policy_document" "assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/main"]
+      values   = [local.main_sub]
     }
   }
 }

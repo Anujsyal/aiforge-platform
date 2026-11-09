@@ -276,6 +276,17 @@ sawaal ──► [1] check_question: "ignore previous instructions", "system pro
 
 **Agli problem (run 42583690047):** guardrails push pe `secrets-scan` (gitleaks) fail: maine redaction test mein nakli AWS key (`AKIA...`) literal likh di thi. Scanner ne sahi pakda. Fix: test key runtime pe banata hai, aur sirf us ek commit ko `.gitleaks.toml` mein allowlist kiya (pura `tests/` path nahi, warna asli leak bhi chhoot jaata). Lesson: test data mein bhi secret-jaise literals mat likho.
 
+**Result (run 42587592936):** guardrails ke saath **quality 91.7% (11/12), red-team 100% (6/6) → gate PASS** ✅. Quality bilkul nahi giri. (Ek fail ab bhi "Can my application call the OpenAI API directly?" pe "I don't know" hai = 1B model limit.)
+
+**Phir agli problem:** step `AWS credentials (OIDC)` → `Credentials could not be loaded ... Could not load credentials from any providers`. Log mein `role-to-assume` input hi nahi tha = GitHub secret `AWS_CI_ROLE_ARN` set nahi tha (khaali secret pe action OIDC ki jagah static keys dhoondhta hai). IAM role ki trust policy (`repo:Anujsyal/aiforge-platform:ref:refs/heads/main`) sahi thi. Fix: secret add → "Re-run failed jobs".
+
+**Teesri problem (re-run #2):** secret ke baad `Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity`. GitHub log mein reason nahi hota, isliye **AWS CloudTrail** dekha (`lookup-events` → `AssumeRoleWithWebIdentity`, `AccessDenied`). Event mein GitHub ka asli `sub` tha:
+```
+Trust policy:  repo:Anujsyal/aiforge-platform:ref:refs/heads/main
+GitHub token:  repo:Anujsyal@86842727/aiforge-platform@1449398889:ref:refs/heads/main
+```
+GitHub ab owner/repo ke permanent numeric IDs jodta hai (repo resurrection attack se bachaav). Fix: `github-oidc` module mein `github_owner_id`/`github_repo_id` (`curl https://api.github.com/repos/Anujsyal/aiforge-platform`), `terraform apply -target=module.github_oidc` (1 change). Lesson: IAM "not authorized" ka asli reason CloudTrail mein milta hai.
+
 **Setup steps:** GitHub secret `AWS_CI_ROLE_ARN = arn:aws:iam::770803607362:role/aiforge-github-ci`, Workflow permissions = Read and write. `image.tag: manual-2` CI ke pehle release commit ke **baad** hatana (pehle hataya to release file ka `0.0.0` deploy hoga = ImagePullBackOff).
 
 **Logs kaise padhe:** promptfoo ki table Actions log mein hoti hai (`[FAIL]` wali rows). Exact numbers "Eval gate" step mein: `EVAL GATE FAILED: passRate=... redteam=...`. HTML report artifact `eval-reports` mein.

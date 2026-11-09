@@ -16,3 +16,15 @@ variable "create_oidc_provider" {
   type        = bool
   default     = true
 }
+
+variable "github_owner_id" {
+  description = "GitHub owner ka numeric ID (curl https://api.github.com/users/<owner> → id). Naye sub format ke liye"
+  type        = string
+  default     = ""
+}
+
+variable "github_repo_id" {
+  description = "GitHub repo ka numeric ID (curl https://api.github.com/repos/<owner>/<repo> → id)"
+  type        = string
+  default     = ""
+}

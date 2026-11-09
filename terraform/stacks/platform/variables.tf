@@ -59,6 +59,18 @@ variable "github_repo" {
   type        = string
 }
 
+# GitHub OIDC sub claim ab IDs ke saath aata hai: repo:<owner>@<owner_id>/<repo>@<repo_id>:ref:...
+# Nikalne ka tareeka:  curl -s https://api.github.com/repos/<owner>/<repo> | grep -m2 '"id"'  (pehla = repo, owner.id = owner)
+variable "github_owner_id" {
+  type    = string
+  default = ""
+}
+
+variable "github_repo_id" {
+  type    = string
+  default = ""
+}
+
 variable "create_github_oidc_provider" {
   type    = bool
   default = true

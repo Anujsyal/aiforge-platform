@@ -3,6 +3,9 @@ region       = "ap-south-1"
 cluster_name = "aiforge"
 
 github_repo  = "<your-github-username>/aiforge-platform"
+# GitHub OIDC naya sub format (owner@id/repo@id). IDs: curl -s https://api.github.com/repos/<owner>/<repo>
+github_owner_id = "<owner-numeric-id>"
+github_repo_id  = "<repo-numeric-id>"
 alert_emails = ["<your-email>"]
 
 # Sizing (guide section 1.6). Free plan account pe sirf free-tier-eligible types chalte hain
