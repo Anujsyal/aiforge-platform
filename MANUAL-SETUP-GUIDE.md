@@ -1021,6 +1021,10 @@ Langfuse mein traces, Grafana panels mein data, Loki mein logs · push.
 ## Phase 8: Platform layer (Crossplane + Backstage)
 
 ### 8.1 Crossplane + VectorStore API
+AWS key (Crossplane provider-aws-s3 ke liye) **seedha AWS → Vault**, kabhi screen/clipboard pe nahi (Phase 7 ka Langfuse paste-401 lesson):
+```bash
+./scripts/crossplane-aws-key.sh        # aws iam create-access-key | python | vault kv put  (rotate: ROTATE=1)
+```
 ```bash
 python scripts/pick-apps.py gitops/platform/10-core.yaml crossplane | kubectl apply -f -
 python scripts/pick-apps.py gitops/platform/20-config.yaml crossplane-config | kubectl apply -f -
@@ -1045,6 +1049,7 @@ kubectl delete ns vs-test                           # collection + bucket bhi de
 Ab `gitops/apps/team-alpha-rag/values.yaml` se `vectorStore.create: false` hata → push. App ka collection ab Crossplane manage karega (`AUTO_CREATE_COLLECTION=false`).
 
 ### 8.2 Backstage app banana (laptop, ek baar)
+> Pehle: **Node 22 LTS** (`node --version` → v22.x; asli laptop pe v20.10 tha → Backstage nahi chalega) + `corepack enable` (yarn). RAM bachane ko Docker Desktop band kar.
 ```bash
 cd backstage
 npx @backstage/create-app@latest --path app       # naam: aiforge-portal  (5-10 min, Node 22)
@@ -1057,12 +1062,11 @@ git add backstage/app && git commit -m "phase 8: backstage app" && git push
 ```
 `backstage-image.yml` CI image banake `gitops/platform-config/backstage/kustomization.yaml` ka `newTag` bump karega.
 
-GitHub **fine-grained PAT**: Repository access = sirf `aiforge-platform`; Permissions: Contents **RW**, Pull requests **RW**, Metadata R. Vault mein:
+GitHub **fine-grained PAT** (github.com → Settings → Developer settings → Fine-grained tokens): Repository access = **sirf** `aiforge-platform`; Permissions: Contents **Read and write**, Pull requests **Read and write** (Metadata Read apne aap). Expiration 30-90 din. Vault mein (input chhupa, copy button se):
 ```bash
-kubectl -n vault exec -i vault-0 -- env VAULT_TOKEN=$(python -c "import json;print(json.load(open('vault-init.json'))['root_token'])")   vault kv patch -mount=secret platform/backstage github_token="$(read -rs -p 'PAT: ' t; echo "$t")"
+./scripts/vault-patch-secret.sh platform/backstage github_token
 kubectl -n backstage annotate externalsecret backstage-secrets force-sync=$(date +%s) --overwrite
 ```
-> `vault-seed-secrets.sh` dobara chalana safe hai: jo path pehle se hai use skip karta hai (`FORCE=1` se overwrite).
 
 ### 8.3 Backstage deploy
 Argo CD ka `backstage` app (Phase 4 mein apply hua) naya tag uthayega:
