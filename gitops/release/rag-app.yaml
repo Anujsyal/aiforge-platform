@@ -2,7 +2,7 @@
 # Saare RAG apps same signed + evaluated image chalate hain; farq sirf config (values.yaml) ka hai.
 image:
   repository: 770803607362.dkr.ecr.ap-south-1.amazonaws.com/aiforge/rag-app
-  tag: "0.0.0"          # placeholder: pehla CI run asli tag + digest likhega
-  digest: ""
+  tag: "5-1ddfb24"
+  digest: "sha256:cf1032d538e9c99038946abad437e48c91865c5e65f591a72643c880c7d696d1"
 ingress:
   inboundCidrs: 122.161.49.234/32   # tera public IP/32 (scripts/configure.sh bharta hai)
