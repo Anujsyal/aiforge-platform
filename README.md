@@ -37,4 +37,6 @@ Terraform · AWS VPC/NAT/NACL/SG/VPC endpoints/Flow Logs/SSM/ECR/Budgets/SNS · 
 | `scripts/` | Kubeconfig/SSM tunnel, Vault init/seed, team onboarding, showback report |
 
 ## Status
-Phases 0-4 deployed on AWS (VPC, k3s, ALB controller, Argo CD, Ollama, LiteLLM, Qdrant, RAG app via ApplicationSet). Phases 5-10 (CI eval gate, security, observability, Backstage, cost) are written but not yet run.
+All 10 phases built and run on AWS (Nov 2026): 4-node k3s cluster, 24 Argo CD applications (app-of-apps) Synced/Healthy, two tenant RAG apps (one created end-to-end from the Backstage golden path). Every real problem hit during the build (74 entries) is documented with root cause and fix in [docs/PROJECT-EXPLAINED.md](docs/PROJECT-EXPLAINED.md#8-problems-faced-aur-fix) and [docs/BUILD-JOURNEY.md](docs/BUILD-JOURNEY.md).
+
+Key results: eval gate caught an insecure release (red-team 50% → guardrails → 100%, quality 91.7%); Kyverno admits only signed + eval-attested images; new app live ~5 min after PR merge; LLM budget exhaustion returns 429; OpenCost node pricing matches AWS list price; Infracost shows +$158/month on a 2-node PR.

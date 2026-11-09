@@ -479,10 +479,12 @@ Terraform `aws_eks_cluster` + managed node groups; ALB controller/Crossplane/Kyv
 
 ## 10. Resume bullets
 
-(Sirf build + run ke baad use kar; numbers apne asli run se bhar.)
+(Asli run ke numbers, Nov 2026.)
 
-- Built a self-service AI platform on AWS (Terraform: VPC across 2 AZs with private subnets, NAT, NACLs, VPC endpoints, flow logs; k3s on EC2 accessible only via SSM) serving self-hosted LLMs (Ollama) behind a central LiteLLM gateway with per-team virtual keys, budgets and fallback.
-- Delivered a golden path: Backstage "Create RAG App" template → PR → Argo CD ApplicationSet + shared Helm chart, with a Crossplane v2 `VectorStore` API provisioning Qdrant collections and S3 buckets; new apps live in ~__ minutes without platform tickets.
-- Implemented an AI eval gate in GitHub Actions (promptfoo quality + prompt-injection red-team, RAGAS advisory) whose results are attached to images as cosign attestations and enforced at admission by Kyverno, along with signature, registry and shadow-AI policies.
-- Blocked shadow AI with default-deny NetworkPolicies and Kyverno rules; managed all keys via Vault + External Secrets; enforced Pod Security `restricted` for tenants.
-- Added observability (Langfuse LLM traces via LiteLLM + OpenTelemetry, Prometheus/Grafana, Loki) and FinOps showback combining LiteLLM token spend with OpenCost namespace cost, Infracost PR diffs and AWS Budgets alerts.
+- Built and ran a self-service AI platform on AWS with ~35 tools: Terraform (2-AZ VPC, private subnets, NAT, NACLs, VPC endpoints, flow logs, GitHub OIDC, Budgets), 4-node k3s on EC2 reachable only via SSM, 24 Argo CD applications managed as app-of-apps with self-heal.
+- Served self-hosted LLMs (Ollama: Llama 3.2 1B, Qwen 2.5 0.5B, nomic-embed) behind a LiteLLM gateway with per-team virtual keys, budgets (exhaustion → HTTP 429) and model fallback; RAG apps on FastAPI + LangChain + Qdrant.
+- Delivered a golden path: Backstage "Create RAG App" form → GitHub PR → ApplicationSet + shared Helm chart, with a Crossplane v2 `VectorStore` API (Qdrant collection + private S3 bucket); a second team's app went live ~5 minutes after merge with no platform tickets.
+- Built an AI eval gate in GitHub Actions (promptfoo quality + prompt-injection red-team) that blocked an insecure release (red-team 50%); fixed with a code-level guardrails layer (input block, context sanitization, output redaction) → red-team 100%, quality 91.7%. Results attached as cosign keyless attestations and enforced at admission by Kyverno.
+- Enforced shadow-AI controls (default-deny NetworkPolicies, Kyverno env/registry policies, PSA restricted) and moved all secrets to Vault + External Secrets via zero-downtime import of live secrets.
+- Added observability (Prometheus/Grafana, Loki/Alloy, OpenTelemetry → Langfuse) and cut probe noise (~8.6k junk traces/day) before it exhausted the free tier; FinOps showback combining LiteLLM token spend with OpenCost namespace cost, Infracost PR diffs (+$158/month caught pre-merge) and AWS Budgets → SNS alerts.
+- Documented 74 real production-style incidents with root cause and fix (e.g. Crossplane namespace-deletion deadlock, shared-ALB tag conflict across tenants, GitHub OIDC immutable-ID `sub` claim, AMI drift that would have replaced every node).

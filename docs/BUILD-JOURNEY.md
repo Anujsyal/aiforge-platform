@@ -6,7 +6,7 @@
 > - Har tool ki theory, interview Q&A: [PROJECT-EXPLAINED.md](PROJECT-EXPLAINED.md)
 > - **Ye doc** = asli build ki diary (2026-11-07 se), real IDs, real errors.
 
-**Status (2026-11-10):** Phase 0-9 done ✅ (~95%). Agla: Phase 10 (demo screenshots + cleanup).
+**Status (2026-11-10):** Saare phases (0-10) done ✅. 24 Argo apps Healthy, 2 tenant apps live. Bacha: screenshots + jab chahe `terraform destroy`.
 
 ---
 
@@ -40,8 +40,8 @@ Build ka order ek ghar banane jaisa hai, neeche se upar:
  Phase 7  CCTV                 → Prometheus, Grafana, Loki, OTel, Langfuse
  Phase 8  Reception desk       → Backstage (self-service form), Crossplane (VectorStore API)
  Phase 9  Bijli ka meter       → OpenCost, Infracost, showback report
- ──────── yahan tak done ────────
- Phase 10 Demo + cleanup
+ Phase 10 Demo + cleanup        → app-of-apps root, self-heal test
+ ──────── yahan tak done (sab) ────────
 ```
 
 **Har phase pichhle pe depend karta hai.** Isiliye order badla nahi ja sakta:
@@ -433,6 +433,53 @@ Account:    AWS Budgets (account $60, Project tag $40) → SNS → email
 4. **Infracost** (secret `INFRACOST_API_KEY` = dashboard → **CLI tokens**, API tokens nahi): demo PR #2 (`agent_count` 3 → 5) → comment: **+$158/month ($393 → $551), +40%** (2 × m7i-flex $74 + gp3 $5). Job fail: Infracost Cloud trial ki example tagging policy **"FinOps tags"** (blocking) — `Service` + `Environment` (Dev/Stage/Prod) missing. Fix: provider `default_tags` mein dono → re-run green. PR close (merge nahi).
 5. **Plan ne bachaya:** tag change ka `terraform plan` → **`4 to add, 36 to change, 4 to destroy`**: `data.aws_ami most_recent` ko Canonical ki nayi Ubuntu image mili → saare nodes "must be replaced" (Vault/Ollama/Loki data node disk pe). Fix: `ignore_changes = [user_data, ami]` → `0 to add, 40 to change, 0 to destroy` → apply → instances same (launch time 9 Nov), sirf tags. Lesson: **har apply se pehle plan padho**, "sirf tag" change bhi.
 6. **Budgets**: `aiforge-project-monthly` $7.88 / $40 (Nov), account budget $0 (credits ke baad net). Purana `Monthly-5USD-Budget` $8.30 > $5 (uske alerts aaye honge). SNS subscription confirmed, test publish → MessageId.
+
+### Phase 10: App-of-apps + demo (2026-11-10) ✅
+
+**Kya kiya:** `kubectl apply -f gitops/bootstrap/root.yaml` → `aiforge-root` app `gitops/platform/*.yaml` ki saari Applications own karta hai (pehle haath se bani thi, same naam = adopt, koi diff nahi). Pehle check: Git ki 21 platform apps = cluster ki apps; team apps (ApplicationSet) root ke scope mein nahi → prune nahi hongi.
+
+**Result:** **24 apps Synced/Healthy** (root + 21 platform + 2 team).
+
+**Self-heal test:** `kubectl -n ai-gateway scale deploy litellm --replicas=0` → Argo ne kuch second mein wapas 1 kiya. Seekh: self-heal drift theek karta hai, **outage nahi rokta** (pod restart tak ~1 min LiteLLM down). Production: replicas ≥ 2 + PodDisruptionBudget.
+
+⚠️ `aiforge-root` pe `resources-finalizer` hai: root delete = saari child apps + unke resources delete (poora platform). Root kabhi delete mat kar; zarurat ho to `kubectl -n argocd patch app aiforge-root --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]'` phir delete (non-cascade).
+
+**Disaster recovery (zero se):** `terraform apply` → `get-kubeconfig.sh` + `tunnel.sh` → Argo CD helm (OCI) → `kubectl apply -f gitops/bootstrap/root.yaml` → `vault-init.sh` → `vault-seed-secrets.sh` + `vault-patch-secret.sh` (Langfuse, PAT) + `crossplane-aws-key.sh` → `litellm-onboard-team.sh` per team. Baaki sab Git se.
+
+**Demo screenshots checklist** (interview/portfolio):
+| # | Kya | Kahan |
+|---|---|---|
+| 1 | VPC resource map (subnets, NAT, endpoints) | AWS Console → VPC → aiforge → Resource map |
+| 2 | `kubectl get nodes` + `kubectl -n argocd get app` (24 Healthy) | terminal |
+| 3 | Argo CD UI: aiforge-root tree | `port-forward svc/argocd-server 8080:80` |
+| 4 | CI run: gate fail (red-team 50%) aur green run | GitHub Actions |
+| 5 | `cosign verify-attestation` output (passRate 0.917, redteam 1) | terminal |
+| 6 | Kyverno deny: unsigned image, nginx, OPENAI_API_KEY | terminal |
+| 7 | NetworkPolicy: api.openai.com unreachable vs gateway alive | terminal |
+| 8 | Langfuse trace (rag-answer: prompt, tokens, latency) | cloud.langfuse.com |
+| 9 | Grafana "AIForge / RAG apps + cost" + Loki Explore | localhost:3000 |
+| 10 | Backstage catalog (component page) + Create RAG App form + PR #1 | localhost:7007, GitHub |
+| 11 | `/ask` team-alpha (llama) vs team-beta (qwen) | terminal |
+| 12 | Budget demo 429 | terminal |
+| 13 | OpenCost UI + showback table | localhost:9090, terminal |
+| 14 | Infracost PR comment (+$158/month) | GitHub PR #2 |
+| 15 | SNS email | Gmail |
+
+**Cleanup (jab project band karna ho)** — order zaroori hai: ALB aur S3 buckets Terraform ne nahi, controllers ne banaye hain. Wo pehle na hate to `terraform destroy` VPC pe atakta hai / bucket orphan rehta hai. Aur root ka self-heal deleted cheezein wapas bana deta hai.
+```bash
+# 1. Root ko hatao BINA children delete kiye (self-heal band; finalizer hata ke)
+kubectl -n argocd patch app aiforge-root --type=json -p='[{"op":"remove","path":"/metadata/finalizers"}]'
+kubectl -n argocd delete app aiforge-root
+# 2. Tenant apps hatao (cascade): Ingress → ALB controller ALB delete karta; VectorStore → Crossplane collection/bucket delete
+kubectl -n argocd delete app tenant-appsets
+kubectl get vectorstore -A                                   # khaali hone tak ruk
+aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(LoadBalancerName,'k8s-aiforge')].LoadBalancerName"   # [] hone tak ruk
+aws s3 ls | grep aiforge-vs                                  # khaali
+# 3. Infra
+cd terraform/stacks/platform && terraform destroy            # plan padh: sirf aiforge resources
+# 4. State bucket (sabse aakhir, chahiye to): cd ../../bootstrap && terraform destroy
+```
+Bachi cheezein check: Langfuse project, Infracost org, GitHub PAT (expire/revoke), Backstage ki branch `rag-app/team-beta-faq`.
 
 ---
 
