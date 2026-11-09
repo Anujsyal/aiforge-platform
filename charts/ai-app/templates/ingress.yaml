@@ -15,7 +15,10 @@ metadata:
     # externalTrafficPolicy Local: pod naye node pe jaaye to ALB jaldi pehchaane (default 15s x 5 = ~75s)
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "10"
     alb.ingress.kubernetes.io/healthy-threshold-count: "2"
-    alb.ingress.kubernetes.io/tags: Project=aiforge,Team={{ include "ai-app.team" . }}
+    # Shared ALB (group) ke tags group-wide hote hain: har app ka Team tag alag → "conflicting tag Team:
+    # team-alpha | team-beta" aur POORE group ka reconcile ruk jaata (asli run, 2026-11-09, doosri team aate hi).
+    # Isliye sirf platform tags. Team ka hissa OpenCost (namespace/team label) se, ALB tag se nahi.
+    alb.ingress.kubernetes.io/tags: Project=aiforge,Owner=platform-team
     # LLM CPU pe slow hai: ALB ka default idle timeout 60s, isse 180s
     alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=180
 spec:
