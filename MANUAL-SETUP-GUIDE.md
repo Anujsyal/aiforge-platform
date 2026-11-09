@@ -982,11 +982,18 @@ kubectl -n monitoring get pods; kubectl -n observability get pods
 `gitops/platform/30-ai.yaml` mein Qdrant ka `metrics.serviceMonitor.enabled: true` kar → push → `kubectl apply -f gitops/platform/30-ai.yaml` (CRD ab hai).
 
 ### 7.2 Langfuse
-Langfuse keys Vault mein 6.1 mein daal chuka. Check:
+Asli run: Phase 6 mein Langfuse keys **placeholder** import hui thi (Phase 3 ka manual secret). Ab asli:
+1. https://cloud.langfuse.com (EU) ya https://us.cloud.langfuse.com (US) → Sign up → New organization → New project `aiforge`.
+2. Project → **Settings → API Keys → Create new API keys** → Public key `pk-lf-...`, Secret key `sk-lf-...` (secret ek hi baar dikhti hai).
+3. Vault mein (input screen pe nahi dikhega; host region wala URL, bina `/` ke end mein):
 ```bash
-kubectl -n observability get secret otel-langfuse          # ESO ne banaya
-kubectl -n ai-gateway rollout restart deploy/litellm        # naye LANGFUSE_* env
+./scripts/vault-patch-secret.sh platform/langfuse public_key secret_key host
+kubectl annotate externalsecret -A --all force-sync=$(date +%s) --overwrite
+kubectl -n ai-gateway rollout restart deploy/litellm             # LANGFUSE_* env (LiteLLM callback)
+kubectl -n observability rollout restart deploy/otel-collector   # app ke OTel traces → Langfuse
 ```
+`vault-seed-secrets.sh` (skip karega) ya `FORCE=1` (saare random secrets badal dega!) yahan **mat** use kar.
+
 Ab kuch sawaal puchh (ALB `/ask`). Langfuse UI → **Traces**:
 - `litellm-acompletion` / generation: model, prompt, response, tokens, cost (internal price), latency, tags `team-alpha-rag`, `team:team-alpha`.
 - App ke OTel spans (`POST /apps/.../ask`, `rag.ask`, httpx calls) usi project mein. Trace ID app se LiteLLM metadata mein jaati hai, isliye dono ek hi trace mein dikh sakte hain (best-effort; alag dikhe to J).
